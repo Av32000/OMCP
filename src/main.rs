@@ -1,16 +1,16 @@
-use std::sync::{Arc, Mutex};
+mod chat;
 
-use ollama_rs::{
-    Ollama,
-    generation::chat::{ChatMessage, ChatMessageResponseStream, request::ChatMessageRequest},
-};
+use ollama_rs::generation::chat::ChatMessage;
 use tokio::io::{AsyncWriteExt, stdout};
 use tokio_stream::StreamExt;
 
+use crate::chat::OllamaChat;
+
+pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let ollama = Ollama::default();
-    let history = Arc::new(Mutex::new(vec![]));
+async fn main() -> AppResult<()> {
+    let mut ollama_chat = OllamaChat::new();
     let mut stdout = stdout();
 
     loop {
@@ -23,16 +23,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let input = input.trim_end();
         if input.eq_ignore_ascii_case("/quit") {
             break;
+        } else if input.eq_ignore_ascii_case("/clear") {
+            ollama_chat.clear();
+            stdout.write_all("Context cleared !".as_bytes()).await?;
+            stdout.flush().await?;
+            continue;
+        } else if input.eq_ignore_ascii_case("/history") {
+            dbg!(ollama_chat.get_history());
+            continue;
         }
 
-        let mut stream: ChatMessageResponseStream = ollama
-            .send_chat_messages_with_history_stream(
-                history.clone(),
-                ChatMessageRequest::new(
-                    "qwen2.5:7b".to_string(),
-                    vec![ChatMessage::user(input.to_string())],
-                ),
-            )
+        let mut stream = ollama_chat
+            .chat(vec![ChatMessage::user(input.to_string())])
             .await?;
 
         let mut response = String::new();
@@ -42,8 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             response += res.message.content.as_str();
         }
     }
-
-    dbg!(&history.lock().unwrap());
 
     Ok(())
 }
