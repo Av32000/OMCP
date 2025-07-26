@@ -1,10 +1,10 @@
 mod chat;
+mod tools;
 
 use ollama_rs::generation::chat::ChatMessage;
 use tokio::io::{AsyncWriteExt, stdout};
-use tokio_stream::StreamExt;
 
-use crate::chat::OllamaChat;
+use crate::{chat::OllamaChat, tools::server::MCPServer};
 
 pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -12,6 +12,21 @@ pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 async fn main() -> AppResult<()> {
     let mut ollama_chat = OllamaChat::new();
     let mut stdout = stdout();
+
+    let mut time_mcp_server = MCPServer::new(tools::server::MCPServerConfig::Stdio {
+        name: "time".to_string(),
+        command: "uvx".to_string(),
+        args: Some(vec!["mcp-server-time".to_string()]),
+        env: None,
+        disabled: false,
+    });
+
+    match time_mcp_server.initialize().await {
+        Ok(()) => {
+            println!("Time MCP server tools : {:?}", time_mcp_server.tools)
+        }
+        Err(err) => eprintln!("{}", err),
+    }
 
     loop {
         stdout.write_all(b"\n> ").await?;
@@ -38,7 +53,7 @@ async fn main() -> AppResult<()> {
             .await?;
 
         let mut response = String::new();
-        while let Some(Ok(res)) = stream.next().await {
+        while let Some(res) = stream.recv().await {
             stdout.write_all(res.message.content.as_bytes()).await?;
             stdout.flush().await?;
             response += res.message.content.as_str();

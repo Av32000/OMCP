@@ -2,8 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use ollama_rs::{
     Ollama,
-    generation::chat::{ChatMessage, ChatMessageResponseStream, request::ChatMessageRequest},
+    generation::chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
 };
+use tokio::sync::mpsc::{self, Receiver};
+use tokio_stream::StreamExt;
 
 use crate::AppResult;
 
@@ -47,8 +49,11 @@ impl OllamaChat {
         }
     }
 
-    pub async fn chat(&self, messages: Vec<ChatMessage>) -> AppResult<ChatMessageResponseStream> {
-        match self
+    pub async fn chat(
+        &self,
+        messages: Vec<ChatMessage>,
+    ) -> AppResult<Receiver<ChatMessageResponse>> {
+        let mut stream = match self
             .ollama
             .send_chat_messages_with_history_stream(
                 self.history.get_history(),
@@ -56,9 +61,26 @@ impl OllamaChat {
             )
             .await
         {
-            Ok(stream) => Ok(stream),
-            Err(err) => Err(Box::new(err)),
-        }
+            Ok(stream) => stream,
+            Err(err) => return Err(Box::new(err)),
+        };
+
+        let (tx, rx) = mpsc::channel(32);
+
+        tokio::spawn(async move {
+            while let Some(Ok(res)) = stream.next().await {
+                if res.message.tool_calls.len() > 0 {
+                    todo!("Tool call not yet handled")
+                } else {
+                    if tx.send(res).await.is_err() {
+                        eprintln!("Chat response stream was closed");
+                        return;
+                    };
+                }
+            }
+        });
+
+        Ok(rx)
     }
 
     pub fn clear(&mut self) {
