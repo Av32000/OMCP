@@ -1,8 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use reqwest::{Client, header::HeaderMap};
 use rmcp::{
-    RoleClient, ServiceExt, model::InitializeResult, service::RunningService,
-    transport::TokioChildProcess,
+    RoleClient, ServiceExt,
+    model::InitializeResult,
+    service::RunningService,
+    transport::{
+        SseClientTransport, StreamableHttpClientTransport, TokioChildProcess,
+        sse_client::SseClientConfig, streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use tokio::process::Command;
 
@@ -20,13 +26,13 @@ pub enum MCPServerConfig {
     SSE {
         name: String,
         url: String,
-        headers: Option<HashMap<String, String>>,
+        headers: Option<HeaderMap>,
         disabled: bool,
     },
     StreamableHttp {
         name: String,
         url: String,
-        headers: Option<HashMap<String, String>>,
+        headers: Option<HeaderMap>,
         disabled: bool,
     },
 }
@@ -50,7 +56,7 @@ impl MCPServer {
     }
 
     pub async fn initialize(&mut self) -> AppResult<()> {
-        match &self.config {
+        let client = match &self.config {
             MCPServerConfig::Stdio {
                 name,
                 command,
@@ -58,24 +64,68 @@ impl MCPServer {
                 env,
                 disabled,
             } => {
-                if !*disabled {
-                    let mut command = Command::new(command);
+                let mut command = Command::new(command);
 
-                    if let Some(args) = args {
-                        command.args(args.iter());
-                    }
-
-                    let client = ().serve(TokioChildProcess::new(command)?).await?;
-
-                    let (peer_info, tools) = MCPServer::fetch_info_from_client(&client).await?;
-
-                    self.client = Some(client);
-                    self.peer_info = Some(peer_info);
-                    self.tools = tools;
+                if let Some(args) = args {
+                    command.args(args.iter());
                 }
+
+                ().serve(TokioChildProcess::new(command)?).await?
             }
-            _ => {}
-        }
+            MCPServerConfig::SSE {
+                name,
+                url,
+                headers,
+                disabled,
+            } => {
+                let mut reqwest_client = Client::builder();
+
+                if let Some(headers) = headers {
+                    reqwest_client = reqwest_client.default_headers(headers.clone());
+                }
+
+                let reqwest_client = reqwest_client.build()?;
+
+                let config = SseClientConfig {
+                    sse_endpoint: Arc::<str>::from(url.clone()),
+                    ..Default::default()
+                };
+
+                ().serve(SseClientTransport::start_with_client(reqwest_client, config).await?)
+                    .await?
+            }
+            MCPServerConfig::StreamableHttp {
+                name,
+                url,
+                headers,
+                disabled,
+            } => {
+                let mut reqwest_client = Client::builder();
+
+                if let Some(headers) = headers {
+                    reqwest_client = reqwest_client.default_headers(headers.clone());
+                }
+
+                let reqwest_client = reqwest_client.build()?;
+
+                let config = StreamableHttpClientTransportConfig {
+                    uri: Arc::<str>::from(url.clone()),
+                    ..Default::default()
+                };
+
+                ().serve(StreamableHttpClientTransport::with_client(
+                    reqwest_client,
+                    config,
+                ))
+                .await?
+            }
+        };
+
+        let (peer_info, tools) = MCPServer::fetch_info_from_client(&client).await?;
+
+        self.client = Some(client);
+        self.peer_info = Some(peer_info);
+        self.tools = tools;
 
         Ok(())
     }

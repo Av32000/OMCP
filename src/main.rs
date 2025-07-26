@@ -13,17 +13,16 @@ async fn main() -> AppResult<()> {
     let mut ollama_chat = OllamaChat::new();
     let mut stdout = stdout();
 
-    let mut time_mcp_server = MCPServer::new(tools::server::MCPServerConfig::Stdio {
-        name: "time".to_string(),
-        command: "uvx".to_string(),
-        args: Some(vec!["mcp-server-time".to_string()]),
-        env: None,
+    let mut deep_wiki_mcp_server = MCPServer::new(tools::server::MCPServerConfig::StreamableHttp {
+        name: "deep_wiki".to_string(),
+        url: "https://mcp.deepwiki.com/mcp".to_string(),
+        headers: None,
         disabled: false,
     });
 
-    match time_mcp_server.initialize().await {
+    match deep_wiki_mcp_server.initialize().await {
         Ok(()) => {
-            println!("Time MCP server tools : {:?}", time_mcp_server.tools)
+            println!("Time MCP server tools : {:?}", deep_wiki_mcp_server.tools)
         }
         Err(err) => eprintln!("{}", err),
     }
