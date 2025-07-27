@@ -7,7 +7,10 @@ use ollama_rs::{
 use tokio::sync::mpsc::{self, Receiver};
 use tokio_stream::StreamExt;
 
-use crate::AppResult;
+use crate::{
+    AppResult,
+    tools::{ToolManager, tool::ToToolInfo},
+};
 
 #[derive(Debug, Clone)]
 pub struct ChatHistory {
@@ -39,13 +42,15 @@ impl ChatHistory {
 pub struct OllamaChat {
     ollama: Ollama,
     history: ChatHistory,
+    tool_manager: Arc<Mutex<ToolManager>>,
 }
 
 impl OllamaChat {
-    pub fn new() -> Self {
+    pub fn new(tool_manager: Arc<Mutex<ToolManager>>) -> Self {
         OllamaChat {
             ollama: Ollama::default(),
             history: ChatHistory::new(),
+            tool_manager,
         }
     }
 
@@ -57,7 +62,15 @@ impl OllamaChat {
             .ollama
             .send_chat_messages_with_history_stream(
                 self.history.get_history(),
-                ChatMessageRequest::new("qwen2.5:7b".to_string(), messages),
+                ChatMessageRequest::new("qwen2.5:7b".to_string(), messages).tools(
+                    self.tool_manager
+                        .lock()
+                        .unwrap()
+                        .get_enabled_tools()
+                        .iter()
+                        .map(|t| t.tool_info.to_tool_info())
+                        .collect(),
+                ),
             )
             .await
         {
@@ -70,7 +83,7 @@ impl OllamaChat {
         tokio::spawn(async move {
             while let Some(Ok(res)) = stream.next().await {
                 if res.message.tool_calls.len() > 0 {
-                    todo!("Tool call not yet handled")
+                    println!("{:?}", res.message.tool_calls)
                 } else {
                     if tx.send(res).await.is_err() {
                         eprintln!("Chat response stream was closed");
