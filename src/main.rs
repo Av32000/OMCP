@@ -31,12 +31,12 @@ async fn main() -> AppResult<()> {
         disabled: false,
     });
 
-    let tool_manager = Arc::new(Mutex::new(ToolManager::new(vec![
+    let tool_manager = Arc::new(tokio::sync::Mutex::new(ToolManager::new(vec![
         deep_wiki_mcp_server,
         fetch_mcp_server,
     ])));
 
-    tool_manager.lock().unwrap().initialize().await?;
+    tool_manager.lock().await.initialize().await?;
 
     let mut ollama_chat = OllamaChat::new(Arc::clone(&tool_manager));
     loop {
@@ -58,7 +58,7 @@ async fn main() -> AppResult<()> {
             dbg!(ollama_chat.get_history());
             continue;
         } else if input.eq_ignore_ascii_case("/tools") {
-            dbg!(tool_manager.lock().unwrap().get_enabled_tools());
+            dbg!(tool_manager.lock().await.get_enabled_tools());
             continue;
         }
 

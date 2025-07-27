@@ -1,5 +1,5 @@
 use ollama_rs::generation::tools::{ToolFunctionInfo, ToolInfo};
-use rmcp::{model::Tool, schemars::Schema};
+use rmcp::model::Tool;
 
 #[derive(Debug, Clone)]
 pub struct MCPTool {

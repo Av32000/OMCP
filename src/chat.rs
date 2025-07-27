@@ -42,11 +42,11 @@ impl ChatHistory {
 pub struct OllamaChat {
     ollama: Ollama,
     history: ChatHistory,
-    tool_manager: Arc<Mutex<ToolManager>>,
+    tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
 }
 
 impl OllamaChat {
-    pub fn new(tool_manager: Arc<Mutex<ToolManager>>) -> Self {
+    pub fn new(tool_manager: Arc<tokio::sync::Mutex<ToolManager>>) -> Self {
         OllamaChat {
             ollama: Ollama::default(),
             history: ChatHistory::new(),
@@ -65,7 +65,7 @@ impl OllamaChat {
                 ChatMessageRequest::new("qwen2.5:7b".to_string(), messages).tools(
                     self.tool_manager
                         .lock()
-                        .unwrap()
+                        .await
                         .get_enabled_tools()
                         .iter()
                         .map(|t| t.tool_info.to_tool_info())
@@ -80,15 +80,73 @@ impl OllamaChat {
 
         let (tx, rx) = mpsc::channel(32);
 
+        let tool_manager = self.tool_manager.clone();
+
+        let history = self.history.clone();
         tokio::spawn(async move {
             while let Some(Ok(res)) = stream.next().await {
-                if res.message.tool_calls.len() > 0 {
-                    println!("{:?}", res.message.tool_calls)
+                {
+                    let mut history_guard = history.messages.lock().unwrap();
+                    history_guard.push(res.message.clone());
+                }
+
+                if !res.message.tool_calls.is_empty() {
+                    let mut tool_messages = Vec::new();
+
+                    for call in res.message.tool_calls {
+                        let args = match serde_json::json!(call.function.arguments)
+                            .as_object()
+                            .cloned()
+                        {
+                            Some(args) => args,
+                            None => continue,
+                        };
+
+                        match tool_manager
+                            .lock()
+                            .await
+                            .call_tool(call.function.name.clone(), args)
+                            .await
+                        {
+                            Ok(result) => {
+                                tool_messages.push(ChatMessage::tool(
+                                    serde_json::to_string(&result.content).unwrap_or_default(),
+                                ));
+                            }
+                            Err(err) => {
+                                eprintln!("Error calling tool {}: {:?}", call.function.name, err);
+                                continue;
+                            }
+                        }
+                    }
+
+                    {
+                        let mut history_guard = history.messages.lock().unwrap();
+                        for msg in &tool_messages {
+                            history_guard.push(msg.clone());
+                        }
+                    }
+
+                    let followup_stream = match Ollama::default()
+                        .send_chat_messages_with_history_stream(
+                            history.get_history(),
+                            ChatMessageRequest::new("qwen2.5:7b".to_string(), tool_messages),
+                        )
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(err) => {
+                            eprintln!("Failed to send tool response back to Ollama: {:?}", err);
+                            break;
+                        }
+                    };
+
+                    stream = followup_stream;
                 } else {
                     if tx.send(res).await.is_err() {
-                        eprintln!("Chat response stream was closed");
-                        return;
-                    };
+                        eprintln!("Chat response stream closed");
+                        break;
+                    }
                 }
             }
         });

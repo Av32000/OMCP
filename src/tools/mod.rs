@@ -1,6 +1,11 @@
 pub mod server;
 pub mod tool;
 
+use rmcp::{
+    handler::client,
+    model::{CallToolRequestParam, CallToolResult},
+};
+use serde_json::{Map, Value as JsonValue};
 use server::MCPServer;
 
 use crate::{AppResult, tools::tool::MCPTool};
@@ -37,5 +42,29 @@ impl ToolManager {
             .flatten()
             .filter(|t| t.enabled)
             .collect()
+    }
+
+    pub async fn call_tool(
+        &self,
+        name: String,
+        arguments: Map<String, JsonValue>,
+    ) -> AppResult<CallToolResult> {
+        for service in &self.services {
+            for tool in &service.tools {
+                if tool.tool_info.name == name {
+                    if let Some(client) = &service.client {
+                        return Ok(client
+                            .call_tool(CallToolRequestParam {
+                                name: name.clone().into(),
+                                arguments: Some(arguments.clone()),
+                            })
+                            .await?);
+                    }
+                }
+            }
+        }
+
+        let error_message = format!("Tool '{}' not found.", name);
+        Err(error_message.into())
     }
 }
