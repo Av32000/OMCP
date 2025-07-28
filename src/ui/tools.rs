@@ -12,12 +12,12 @@ pub fn render_available_tools(tools: &[MCPTool]) -> String {
         let header = if tool.enabled {
             colorize_text(
                 format!("{} {}", "[✔]", tool.tool_info.name).as_str(),
-                AnsiColor::Green,
+                AnsiColor::BrightGreen,
             )
         } else {
             colorize_text(
                 format!("{} {}", "[✘]", tool.tool_info.name).as_str(),
-                AnsiColor::Red,
+                AnsiColor::BrightRed,
             )
         };
 
@@ -36,7 +36,7 @@ pub fn render_available_tools(tools: &[MCPTool]) -> String {
     RoundedBox::new(
         &output,
         Some("Available Tools"),
-        Some(AnsiColor::Blue),
+        Some(AnsiColor::BrightBlue),
         false,
     )
     .render()

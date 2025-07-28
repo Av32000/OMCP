@@ -4,12 +4,20 @@ use ollama_rs::{
     Ollama,
     generation::chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
 };
-use tokio::sync::mpsc::{self, Receiver};
+use tokio::{
+    io::{AsyncWriteExt, stdout},
+    sync::mpsc::{self, Receiver},
+};
 use tokio_stream::StreamExt;
 
 use crate::{
     AppResult,
+    settings::SettingsManager,
     tools::{ToolManager, tool::ToToolInfo},
+    ui::{
+        RoundedBox,
+        utils::{AnsiColor, colorize_text},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -43,14 +51,19 @@ pub struct OllamaChat {
     ollama: Ollama,
     history: ChatHistory,
     tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
+    settings_manager: Arc<Mutex<SettingsManager>>,
 }
 
 impl OllamaChat {
-    pub fn new(tool_manager: Arc<tokio::sync::Mutex<ToolManager>>) -> Self {
+    pub fn new(
+        tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
+        settings_manager: Arc<Mutex<SettingsManager>>,
+    ) -> Self {
         OllamaChat {
             ollama: Ollama::default(),
             history: ChatHistory::new(),
             tool_manager,
+            settings_manager,
         }
     }
 
@@ -58,11 +71,13 @@ impl OllamaChat {
         &self,
         messages: Vec<ChatMessage>,
     ) -> AppResult<Receiver<ChatMessageResponse>> {
+        let model_name = self.settings_manager.lock().unwrap().model_name.clone();
+
         let mut stream = match self
             .ollama
             .send_chat_messages_with_history_stream(
                 self.history.get_history(),
-                ChatMessageRequest::new("qwen2.5:7b".to_string(), messages).tools(
+                ChatMessageRequest::new(model_name.clone(), messages).tools(
                     self.tool_manager
                         .lock()
                         .await
@@ -83,6 +98,7 @@ impl OllamaChat {
         let tool_manager = self.tool_manager.clone();
 
         let history = self.history.clone();
+        let tool_confirmation = self.settings_manager.lock().unwrap().tool_confirmation;
         tokio::spawn(async move {
             while let Some(Ok(res)) = stream.next().await {
                 {
@@ -102,6 +118,38 @@ impl OllamaChat {
                             None => continue,
                         };
 
+                        let mut stdout = stdout();
+                        stdout
+                            .write_all(
+                                format!(
+                                    "{}\n",
+                                    RoundedBox::new(
+                                        &format!(
+                                            "Name: {}\nArguments: {:?}",
+                                            call.function.name, args
+                                        ),
+                                        Some("Tool Call Request"),
+                                        Some(AnsiColor::BrightMagenta),
+                                        false,
+                                    )
+                                    .render()
+                                )
+                                .as_bytes(),
+                            )
+                            .await
+                            .unwrap();
+                        stdout.flush().await.unwrap();
+
+                        if tool_confirmation {
+                            eprintln!(
+                                "{}",
+                                colorize_text(
+                                    "\nTool call confirmation nor implemented yet.\n",
+                                    AnsiColor::Red
+                                )
+                            );
+                        }
+
                         match tool_manager
                             .lock()
                             .await
@@ -109,6 +157,26 @@ impl OllamaChat {
                             .await
                         {
                             Ok(result) => {
+                                stdout
+                                    .write_all(
+                                        format!(
+                                            "{}\n",
+                                            RoundedBox::new(
+                                                serde_json::to_string_pretty(&result.content)
+                                                    .unwrap_or_default()
+                                                    .as_str(),
+                                                Some("Tool Call Result"),
+                                                Some(AnsiColor::BrightGreen),
+                                                false,
+                                            )
+                                            .render()
+                                        )
+                                        .as_bytes(),
+                                    )
+                                    .await
+                                    .unwrap();
+                                stdout.flush().await.unwrap();
+
                                 tool_messages.push(ChatMessage::tool(
                                     serde_json::to_string(&result.content).unwrap_or_default(),
                                 ));
@@ -130,7 +198,7 @@ impl OllamaChat {
                     let followup_stream = match Ollama::default()
                         .send_chat_messages_with_history_stream(
                             history.get_history(),
-                            ChatMessageRequest::new("qwen2.5:7b".to_string(), tool_messages),
+                            ChatMessageRequest::new(model_name.clone(), tool_messages),
                         )
                         .await
                     {

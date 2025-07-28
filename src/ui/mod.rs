@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use ollama_rs::generation::chat::ChatMessage;
 use tokio::io::{AsyncWriteExt, stdout};
 
-use crate::{chat::OllamaChat, ui::tools::render_available_tools};
+use crate::{chat::OllamaChat, settings::SettingsManager, ui::tools::render_available_tools};
 
 mod tools;
 pub mod utils;
@@ -13,6 +13,7 @@ pub use utils::RoundedBox;
 pub struct AppUI {
     ollama_chat: OllamaChat,
     tool_manager: Arc<tokio::sync::Mutex<crate::tools::ToolManager>>,
+    settings_manager: Arc<Mutex<SettingsManager>>,
 }
 
 pub trait AppUIRenderable {
@@ -23,10 +24,12 @@ impl AppUI {
     pub fn new(
         ollama_chat: OllamaChat,
         tool_manager: Arc<tokio::sync::Mutex<crate::tools::ToolManager>>,
+        settings_manager: Arc<Mutex<SettingsManager>>,
     ) -> Self {
         AppUI {
             ollama_chat,
             tool_manager,
+            settings_manager,
         }
     }
 
@@ -55,6 +58,18 @@ impl AppUI {
                 stdout
                     .write_all(
                         render_available_tools(&self.tool_manager.lock().await.get_tools())
+                            .as_bytes(),
+                    )
+                    .await?;
+                stdout.flush().await?;
+                continue;
+            } else if input.eq_ignore_ascii_case("/settings") {
+                stdout
+                    .write_all(
+                        self.settings_manager
+                            .lock()
+                            .unwrap()
+                            .render(true)
                             .as_bytes(),
                     )
                     .await?;

@@ -1,11 +1,13 @@
 mod chat;
+mod settings;
 mod tools;
 mod ui;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     chat::OllamaChat,
+    settings::SettingsManager,
     tools::{ToolManager, server::MCPServer},
 };
 
@@ -13,6 +15,8 @@ pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
+    let settings_manager = Arc::new(Mutex::new(SettingsManager::default()));
+
     let time_mcp_server = MCPServer::new(tools::server::MCPServerConfig::Stdio {
         name: "time".to_string(),
         command: "uvx".to_string(),
@@ -27,9 +31,9 @@ async fn main() -> AppResult<()> {
 
     tool_manager.lock().await.initialize().await?;
 
-    let ollama_chat = OllamaChat::new(Arc::clone(&tool_manager));
+    let ollama_chat = OllamaChat::new(Arc::clone(&tool_manager), Arc::clone(&settings_manager));
 
-    let mut app_ui = ui::AppUI::new(ollama_chat, tool_manager);
+    let mut app_ui = ui::AppUI::new(ollama_chat, tool_manager, settings_manager);
     app_ui.run().await?;
 
     Ok(())

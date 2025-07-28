@@ -109,11 +109,13 @@ impl RoundedBox {
                         vertical
                     )
                 } else {
+                    let adjusted_line = format!(" {}", line); // Add a space before the text
+                    let visible_length = calculate_visible_length(&adjusted_line); // Recalculate visible length
                     let right_padding = inner_width.saturating_sub(visible_length);
                     format!(
                         "{}{}{}{}",
                         vertical,
-                        line,
+                        adjusted_line,
                         space.to_string().repeat(right_padding),
                         vertical
                     )
@@ -160,6 +162,7 @@ pub fn colorize_text(text: &str, color: AnsiColor) -> String {
     format!("\x1b[{}m{}\x1b[0m", color.to_ansi_code(), text)
 }
 
+#[allow(dead_code)]
 #[derive(Copy, Clone)]
 pub enum AnsiColor {
     Black,
