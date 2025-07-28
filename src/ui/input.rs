@@ -1,6 +1,8 @@
 use crossterm::{
+    cursor,
     event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    execute,
+    terminal::{self, disable_raw_mode, enable_raw_mode},
 };
 use tokio::io::{AsyncWriteExt, stdout};
 
@@ -30,7 +32,7 @@ impl MenuChoice {
             .to_lowercase()
             .find(self.shortcut.to_lowercase().to_string().as_str())
         {
-            let mut result = String::with_capacity(self.name.len() + 2); // +2 for the brackets
+            let mut result = String::with_capacity(self.name.len() + 2);
             result.push_str(&self.name[..pos]);
             result.push('[');
             result.push(self.shortcut);
@@ -49,35 +51,51 @@ pub async fn menu_selection(prompt: &str, choices: Vec<MenuChoice>, column: bool
 
     let item_separator = if column { "\n" } else { "   " };
 
-    let mut render_choices = async move |choices: Vec<MenuChoice>, current| {
+    let render_choices = |choices: &Vec<MenuChoice>, current: u8| -> String {
         let mut items = String::new();
 
         for (i, choice) in choices.iter().enumerate() {
             if i as u8 == current {
                 items.push_str(&colorize_text(
-                    &format!("> {}{}", choice.to_display_string(), item_separator),
+                    &format!(
+                        "{}> {}{}",
+                        if column { "\r" } else { "" },
+                        choice.to_display_string(),
+                        item_separator
+                    ),
                     AnsiColor::Green,
                 ));
             } else {
                 items.push_str(&format!(
-                    "  {}{}",
+                    "{}  {}{}",
+                    if column { "\r" } else { "" },
                     choice.to_display_string(),
                     item_separator
                 ));
             }
         }
 
-        stdout
-            .write_all(format!("\r{} {}", prompt, items).as_bytes())
-            .await
-            .unwrap();
-
-        stdout.flush().await.unwrap();
+        format!("\r{}{}{}", prompt, if column { "\n" } else { " " }, items)
     };
 
     let mut current: u8 = 0;
-    'key_loop: loop {
-        render_choices(choices.clone(), current.clone()).await;
+    let mut lines_to_clear = 0;
+
+    loop {
+        for _ in 0..lines_to_clear {
+            execute!(
+                std::io::stdout(),
+                cursor::MoveUp(1),
+                terminal::Clear(terminal::ClearType::CurrentLine)
+            )
+            .unwrap();
+        }
+
+        let rendered = render_choices(&choices, current);
+        lines_to_clear = rendered.matches('\n').count();
+        stdout.write_all(rendered.as_bytes()).await.unwrap();
+        stdout.flush().await.unwrap();
+
         if let Event::Key(key_event) = event::read().unwrap() {
             match key_event.code {
                 KeyCode::Up => {
@@ -107,7 +125,7 @@ pub async fn menu_selection(prompt: &str, choices: Vec<MenuChoice>, column: bool
                     for (i, choice) in choices.iter().enumerate() {
                         if choice.shortcut.to_lowercase().next().unwrap_or_default() == c {
                             current = i as u8;
-                            break 'key_loop;
+                            break;
                         }
                     }
                 }
@@ -117,7 +135,6 @@ pub async fn menu_selection(prompt: &str, choices: Vec<MenuChoice>, column: bool
     }
 
     disable_raw_mode().unwrap();
-    render_choices(choices.clone(), current.clone()).await;
     println!();
     current
 }
