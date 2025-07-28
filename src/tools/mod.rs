@@ -2,7 +2,6 @@ pub mod server;
 pub mod tool;
 
 use rmcp::{
-    handler::client,
     model::{CallToolRequestParam, CallToolResult},
 };
 use serde_json::{Map, Value as JsonValue};

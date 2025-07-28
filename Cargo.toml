@@ -5,9 +5,11 @@ edition = "2024"
 
 [dependencies]
 ollama-rs = { version = "0.3.2", features = ["stream"] }
+regex = "1.11.1"
 reqwest = "0.12.22"
 rmcp = { version = "0.3.0", features = ["client", "reqwest", "transport-child-process", "transport-sse-client", "transport-streamable-http-client"] }
 serde = "1.0.219"
 serde_json = "1.0.141"
+terminal_size = "0.4.2"
 tokio = "1.46.1"
 tokio-stream = "0.1.17"

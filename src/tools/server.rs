@@ -130,7 +130,7 @@ impl MCPServer {
         Ok(())
     }
 
-    pub async fn fetch_info_from_client(
+    async fn fetch_info_from_client(
         client: &RunningService<RoleClient, ()>,
     ) -> AppResult<(InitializeResult, Vec<MCPTool>)> {
         let peer_info = match client.peer_info() {
