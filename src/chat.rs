@@ -15,8 +15,8 @@ use crate::{
     settings::SettingsManager,
     tools::{ToolManager, tool::ToToolInfo},
     ui::{
-        RoundedBox,
-        utils::{AnsiColor, colorize_text},
+        input::{self, MenuChoice},
+        tools::{render_tool_call_request, render_tool_call_result},
     },
 };
 
@@ -123,16 +123,10 @@ impl OllamaChat {
                             .write_all(
                                 format!(
                                     "{}\n",
-                                    RoundedBox::new(
-                                        &format!(
-                                            "Name: {}\nArguments: {:?}",
-                                            call.function.name, args
-                                        ),
-                                        Some("Tool Call Request"),
-                                        Some(AnsiColor::BrightMagenta),
-                                        false,
+                                    render_tool_call_request(
+                                        call.function.name.clone(),
+                                        args.clone()
                                     )
-                                    .render()
                                 )
                                 .as_bytes(),
                             )
@@ -140,51 +134,64 @@ impl OllamaChat {
                             .unwrap();
                         stdout.flush().await.unwrap();
 
+                        let mut call_tool = true;
                         if tool_confirmation {
-                            eprintln!(
-                                "{}",
-                                colorize_text(
-                                    "\nTool call confirmation nor implemented yet.\n",
-                                    AnsiColor::Red
-                                )
-                            );
+                            let confirm = input::menu_selection(
+                                "Confirm tool call : ",
+                                vec![
+                                    MenuChoice {
+                                        name: "Yes".to_string(),
+                                        shortcut: 'Y',
+                                    },
+                                    MenuChoice {
+                                        name: "No".to_string(),
+                                        shortcut: 'N',
+                                    },
+                                ],
+                                false,
+                            )
+                            .await;
+
+                            if confirm == 1 {
+                                call_tool = false;
+                            }
                         }
 
-                        match tool_manager
-                            .lock()
-                            .await
-                            .call_tool(call.function.name.clone(), args)
-                            .await
-                        {
-                            Ok(result) => {
-                                stdout
-                                    .write_all(
-                                        format!(
-                                            "{}\n",
-                                            RoundedBox::new(
-                                                serde_json::to_string_pretty(&result.content)
-                                                    .unwrap_or_default()
-                                                    .as_str(),
-                                                Some("Tool Call Result"),
-                                                Some(AnsiColor::BrightGreen),
-                                                false,
+                        if call_tool {
+                            match tool_manager
+                                .lock()
+                                .await
+                                .call_tool(call.function.name.clone(), args)
+                                .await
+                            {
+                                Ok(result) => {
+                                    stdout
+                                        .write_all(
+                                            format!(
+                                                "{}\n",
+                                                render_tool_call_result(&result.content)
                                             )
-                                            .render()
+                                            .as_bytes(),
                                         )
-                                        .as_bytes(),
-                                    )
-                                    .await
-                                    .unwrap();
-                                stdout.flush().await.unwrap();
+                                        .await
+                                        .unwrap();
+                                    stdout.flush().await.unwrap();
 
-                                tool_messages.push(ChatMessage::tool(
-                                    serde_json::to_string(&result.content).unwrap_or_default(),
-                                ));
+                                    tool_messages.push(ChatMessage::tool(
+                                        serde_json::to_string(&result.content).unwrap_or_default(),
+                                    ));
+                                }
+                                Err(err) => {
+                                    eprintln!(
+                                        "Error calling tool {}: {:?}",
+                                        call.function.name, err
+                                    );
+                                    continue;
+                                }
                             }
-                            Err(err) => {
-                                eprintln!("Error calling tool {}: {:?}", call.function.name, err);
-                                continue;
-                            }
+                        } else {
+                            tool_messages
+                                .push(ChatMessage::tool("Tool cancelled by user".to_string()));
                         }
                     }
 

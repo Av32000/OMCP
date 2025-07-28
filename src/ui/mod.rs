@@ -5,7 +5,8 @@ use tokio::io::{AsyncWriteExt, stdout};
 
 use crate::{chat::OllamaChat, settings::SettingsManager, ui::tools::render_available_tools};
 
-mod tools;
+pub mod input;
+pub mod tools;
 pub mod utils;
 
 pub use utils::RoundedBox;
@@ -37,11 +38,8 @@ impl AppUI {
         let mut stdout = stdout();
 
         loop {
-            stdout.write_all(b"\n> ").await?;
-            stdout.flush().await?;
-
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
+            println!();
+            let input = input::text_input("> ");
 
             let input = input.trim_end();
             if input.eq_ignore_ascii_case("/quit") {
@@ -82,11 +80,9 @@ impl AppUI {
                 .chat(vec![ChatMessage::user(input.to_string())])
                 .await?;
 
-            let mut response = String::new();
             while let Some(res) = stream.recv().await {
                 stdout.write_all(res.message.content.as_bytes()).await?;
                 stdout.flush().await?;
-                response += res.message.content.as_str();
             }
         }
         Ok(())

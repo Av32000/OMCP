@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+crossterm = "0.29.0"
 ollama-rs = { version = "0.3.2", features = ["stream"] }
 regex = "1.11.1"
 reqwest = "0.12.22"

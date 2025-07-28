@@ -1,3 +1,6 @@
+use rmcp::model::{Annotated, RawContent};
+use serde_json::{Map, Value};
+
 use crate::{
     tools::tool::MCPTool,
     ui::{
@@ -37,6 +40,32 @@ pub fn render_available_tools(tools: &[MCPTool]) -> String {
         &output,
         Some("Available Tools"),
         Some(AnsiColor::BrightBlue),
+        false,
+    )
+    .render()
+}
+
+pub fn render_tool_call_request(name: String, args: Map<String, Value>) -> String {
+    RoundedBox::new(
+        &format!(
+            "Name: {}\nArguments: {:?}",
+            name,
+            serde_json::to_string(&args).unwrap_or_default()
+        ),
+        Some("Tool Call Request"),
+        Some(AnsiColor::BrightMagenta),
+        false,
+    )
+    .render()
+}
+
+pub fn render_tool_call_result(result: &Vec<Annotated<RawContent>>) -> String {
+    RoundedBox::new(
+        serde_json::to_string_pretty(result)
+            .unwrap_or_default()
+            .as_str(),
+        Some("Tool Call Result"),
+        Some(AnsiColor::BrightGreen),
         false,
     )
     .render()

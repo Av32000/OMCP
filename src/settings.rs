@@ -17,7 +17,6 @@ fn format_settings_key(key: String) -> String {
 }
 
 fn format_settings_value(value: Value) -> String {
-    println!("{}", value);
     let value = value.to_string();
     match value.as_str() {
         "true" => "Enabled".to_string(),
