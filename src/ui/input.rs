@@ -138,3 +138,88 @@ pub async fn menu_selection(prompt: &str, choices: Vec<MenuChoice>, column: bool
     println!();
     current
 }
+
+pub async fn menu_toggle(
+    prompt: &str,
+    choices: Vec<(MenuChoice, bool)>,
+) -> Vec<(MenuChoice, bool)> {
+    let mut stdout = stdout();
+    let mut choices: Vec<(MenuChoice, bool)> = choices;
+    enable_raw_mode().unwrap();
+
+    let render_choices = |choices: &Vec<(MenuChoice, bool)>, current: u8| -> String {
+        let mut items = String::new();
+
+        for (i, item) in choices.iter().enumerate() {
+            items.push_str(&colorize_text(
+                &format!(
+                    "\r{} {}\n",
+                    if item.1 == true { "●" } else { "○" },
+                    item.0.to_display_string(),
+                ),
+                if i as u8 == current {
+                    AnsiColor::Green
+                } else {
+                    AnsiColor::White
+                },
+            ));
+        }
+
+        format!("\r{}\n{}", prompt, items)
+    };
+
+    let mut current: u8 = 0;
+    let mut lines_to_clear = 0;
+
+    loop {
+        for _ in 0..lines_to_clear {
+            execute!(
+                std::io::stdout(),
+                cursor::MoveUp(1),
+                terminal::Clear(terminal::ClearType::CurrentLine)
+            )
+            .unwrap();
+        }
+
+        let rendered = render_choices(&choices, current);
+        lines_to_clear = rendered.matches('\n').count();
+        stdout.write_all(rendered.as_bytes()).await.unwrap();
+        stdout.flush().await.unwrap();
+
+        if let Event::Key(key_event) = event::read().unwrap() {
+            match key_event.code {
+                KeyCode::Up => {
+                    if current > 0 {
+                        current -= 1;
+                    }
+                }
+                KeyCode::Down => {
+                    if current < (choices.len() as u8 - 1) {
+                        current += 1;
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    if let Some(choice) = choices.get_mut(current as usize) {
+                        choice.1 = !choice.1;
+                    }
+                }
+                KeyCode::Enter => {
+                    break;
+                }
+                KeyCode::Char(c) => {
+                    for (i, choice) in choices.iter().enumerate() {
+                        if choice.0.shortcut.to_lowercase().next().unwrap_or_default() == c {
+                            current = i as u8;
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    disable_raw_mode().unwrap();
+    println!();
+    choices
+}

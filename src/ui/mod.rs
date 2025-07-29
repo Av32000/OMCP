@@ -11,6 +11,7 @@ use crate::{
     settings::SettingsManager,
     tools::ToolManager,
     ui::{
+        input::MenuChoice,
         tools::render_available_tools,
         utils::{AnsiColor, colorize_text},
     },
@@ -99,10 +100,37 @@ impl AppUI {
                 "/history" => {
                     dbg!(self.ollama_chat.get_history());
                 }
-                "/tools" => {
-                    let tools = self.tool_manager.lock().await.get_tools();
-                    println!("{}", render_available_tools(&tools));
-                }
+                "/tools" => match args.as_str() {
+                    "show" => {
+                        let tools = self.tool_manager.lock().await;
+                        println!("{}", render_available_tools(&tools.get_tools()));
+                    }
+                    "toggle" => {
+                        let mut tools = self.tool_manager.lock().await;
+                        let choices = tools
+                            .get_tools()
+                            .iter()
+                            .map(|tool| {
+                                (
+                                    MenuChoice {
+                                        name: tool.tool_info.name.to_string(),
+                                        shortcut: '#',
+                                    },
+                                    tool.enabled,
+                                )
+                            })
+                            .collect::<Vec<_>>();
+                        let selected = input::menu_toggle("Toggle Tools : ", choices).await;
+
+                        for (i, choice) in selected.iter().enumerate() {
+                            tools.set_tool_status(&choice.0.name, choice.1).unwrap();
+                        }
+                        println!("{}", render_available_tools(&tools.get_tools()));
+                    }
+                    _ => {
+                        println!("Usage: /tools [show|toggle]");
+                    }
+                },
                 "/settings" => match args.as_str() {
                     "show" => {
                         let settings = self.settings_manager.lock().unwrap();
@@ -111,6 +139,14 @@ impl AppUI {
                     "edit" => {
                         let mut settings = self.settings_manager.lock().unwrap();
                         settings.render_edit_menu().await;
+                    }
+                    "save" => {
+                        let settings = self.settings_manager.lock().unwrap();
+                        settings
+                            .save_to_file(&settings.config_file_path)
+                            .unwrap_or_else(|err| {
+                                eprintln!("Error saving settings: {}", err);
+                            });
                     }
                     _ => {
                         println!("Usage: /settings [show|edit]");
@@ -121,8 +157,11 @@ impl AppUI {
                         ("/quit", "Exit the application"),
                         ("/clear", "Clear the chat context"),
                         ("/history", "Show chat history"),
-                        ("/tools", "List available tools"),
-                        ("/settings [show|edit]", "Show or Edit current settings"),
+                        ("/tools [show|toggle]", "List or Toggle available tools"),
+                        (
+                            "/settings [show|edit|save]",
+                            "Show, Edit or Save current settings",
+                        ),
                         ("/help", "Show this help message"),
                     ];
 
