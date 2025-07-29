@@ -1,13 +1,13 @@
 use std::{
     fs::{read_to_string, write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 
 use crate::{
-    AppResult,
+    AppResult, get_config_path,
     ui::{
         AppUIRenderable, RoundedBox,
         input::{MenuChoice, menu_selection, text_input},
@@ -134,32 +134,20 @@ impl SettingsManager {
             }
         }
 
-        self.save_to_file(SettingsManager::get_config_path())
+        self.save_to_file(&get_config_path(crate::ConfigFile::Settings))
             .expect("Failed to save updated settings to config file");
     }
 
-    pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> AppResult<SettingsManager> {
-        let content = read_to_string(file_path.as_ref())?;
+    pub fn load_from_file(file_path: &Path) -> AppResult<SettingsManager> {
+        let content = read_to_string(file_path)?;
         let settings: SettingsManager = serde_json::from_str(&content)?;
         Ok(settings)
     }
 
-    pub fn save_to_file<P: AsRef<Path>>(&self, file_path: P) -> AppResult<()> {
+    pub fn save_to_file(&self, file_path: &Path) -> AppResult<()> {
         let content = serde_json::to_string_pretty(self)?;
-        write(file_path.as_ref(), content)?;
+        write(file_path, content)?;
         Ok(())
-    }
-
-    pub fn get_config_path() -> PathBuf {
-        let crate_name = env!("CARGO_PKG_NAME");
-        let mut config_path = dirs::config_dir()
-            .expect("Failed to get config directory")
-            .join(crate_name);
-        if !config_path.exists() {
-            std::fs::create_dir_all(&config_path).expect("Failed to create config directory");
-        }
-        config_path.push("settings.json");
-        config_path
     }
 }
 

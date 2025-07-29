@@ -36,6 +36,11 @@ pub fn render_available_tools(tools: &[MCPTool]) -> String {
         output.push_str(&result);
         output.push('\n');
     }
+
+    if output.is_empty() {
+        output = "No tools available".to_string();
+    }
+
     RoundedBox::new(
         &output,
         Some("Available Tools"),
