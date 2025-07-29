@@ -1,7 +1,19 @@
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use std::{
+    fs::{read_to_string, write},
+    path::{Path, PathBuf},
+};
 
-use crate::ui::{AppUIRenderable, RoundedBox, utils::AnsiColor};
+use serde::{Deserialize, Serialize};
+use serde_json::{Number, Value};
+
+use crate::{
+    AppResult,
+    ui::{
+        AppUIRenderable, RoundedBox,
+        input::{MenuChoice, menu_selection, text_input},
+        utils::AnsiColor,
+    },
+};
 
 fn format_settings_key(key: String) -> String {
     key.split('_')
@@ -31,6 +43,124 @@ fn format_settings_value(value: Value) -> String {
 pub struct SettingsManager {
     pub model_name: String,
     pub tool_confirmation: bool,
+}
+
+impl SettingsManager {
+    pub async fn render_edit_menu(&mut self) {
+        let json_value: Value =
+            serde_json::to_value(self.clone()).expect("Failed to serialize settings");
+
+        let mut choices = vec![];
+        if let Value::Object(map) = json_value.clone() {
+            for (key, value) in map {
+                choices.push(MenuChoice {
+                    name: format!(
+                        "{}: {}",
+                        format_settings_key(key),
+                        format_settings_value(value)
+                    ),
+                    shortcut: '#',
+                });
+            }
+        }
+
+        let index = menu_selection("Choose settings to edit : ", choices, true).await;
+
+        let key = json_value
+            .as_object()
+            .and_then(|obj| obj.keys().nth(index as usize))
+            .cloned()
+            .unwrap_or_default();
+
+        let current_value = json_value.get(&key).cloned().unwrap_or(Value::Null);
+
+        match current_value {
+            Value::String(_) => {
+                let new_value = text_input(&format!("New value for {}: ", key));
+                if !new_value.is_empty() {
+                    self.update_setting(&key, Value::String(new_value));
+                }
+            }
+            Value::Number(_) => {
+                let new_value = text_input(&format!("New value for {}: ", key));
+                if !new_value.is_empty() {
+                    let new_value: Number = new_value.parse().unwrap_or(Number::from(0));
+                    self.update_setting(&key, Value::Number(new_value));
+                }
+            }
+            Value::Bool(_) => {
+                let choices = vec![
+                    MenuChoice {
+                        name: "Enabled".to_string(),
+                        shortcut: 'E',
+                    },
+                    MenuChoice {
+                        name: "Disabled".to_string(),
+                        shortcut: 'D',
+                    },
+                ];
+                let choice = menu_selection(
+                    &format!(
+                        "Toggle {} (current: {})",
+                        key,
+                        if current_value.as_bool().unwrap_or(false) {
+                            "Enabled"
+                        } else {
+                            "Disabled"
+                        }
+                    ),
+                    choices,
+                    true,
+                )
+                .await;
+                self.update_setting(&key, Value::Bool(choice == 0));
+            }
+            _ => {
+                println!("Unsupported setting type for {}", key);
+            }
+        }
+
+        println!("Updated settings:\n{}", self.render(true));
+    }
+
+    fn update_setting(&mut self, key: &str, value: Value) {
+        if let Ok(json_value) = serde_json::to_value(self.clone()).map(|v| {
+            let mut obj = v.as_object().cloned().unwrap_or_default();
+            obj.insert(key.to_string(), value);
+            Value::Object(obj)
+        }) {
+            if let Ok(new_self) = serde_json::from_value::<SettingsManager>(json_value) {
+                *self = new_self;
+            }
+        }
+
+        self.save_to_file(SettingsManager::get_config_path())
+            .expect("Failed to save updated settings to config file");
+    }
+
+    pub fn load_from_file<P: AsRef<Path>>(file_path: P) -> AppResult<SettingsManager> {
+        let content = read_to_string(file_path.as_ref())?;
+        let settings: SettingsManager = serde_json::from_str(&content)?;
+        Ok(settings)
+    }
+
+    pub fn save_to_file<P: AsRef<Path>>(&self, file_path: P) -> AppResult<()> {
+        let content = serde_json::to_string_pretty(self)?;
+        write(file_path.as_ref(), content)?;
+        Ok(())
+    }
+
+    pub fn get_config_path() -> PathBuf {
+        let crate_name = env!("CARGO_PKG_NAME");
+        let mut config_path = dirs::config_dir()
+            .expect("Failed to get config directory")
+            .join(crate_name);
+        if !config_path.exists() {
+            std::fs::create_dir_all(&config_path).expect("Failed to create config directory");
+        }
+        config_path.push("settings.json");
+        config_path
+    }
 }
 
 impl Default for SettingsManager {

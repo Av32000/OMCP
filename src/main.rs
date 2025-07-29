@@ -15,7 +15,20 @@ pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 #[tokio::main]
 async fn main() -> AppResult<()> {
-    let settings_manager = Arc::new(Mutex::new(SettingsManager::default()));
+    let settings_manager = match SettingsManager::load_from_file(SettingsManager::get_config_path())
+    {
+        Ok(settings) => Arc::new(Mutex::new(settings)),
+        Err(e) => {
+            eprintln!("Failed to load settings from config file. Loading default config",);
+            Arc::new(Mutex::new(SettingsManager::default()))
+        }
+    };
+
+    settings_manager
+        .lock()
+        .unwrap()
+        .save_to_file(SettingsManager::get_config_path())
+        .expect("Failed to save settings to config file");
 
     let time_mcp_server = MCPServer::new(tools::server::MCPServerConfig::Stdio {
         name: "time".to_string(),
