@@ -58,7 +58,19 @@ impl OllamaChat {
     pub fn new(
         tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
         settings_manager: Arc<Mutex<SettingsManager>>,
+        ollama_host: Option<String>,
     ) -> Self {
+        let ollama = if let Some(host) = ollama_host {
+            let (host, port) = host
+                .split_once(':')
+                .map(|(h, p)| (h.to_string(), p.parse::<u16>().unwrap_or(11434)))
+                .unwrap_or((host.clone(), 11434));
+
+            Ollama::new(host, port)
+        } else {
+            Ollama::default()
+        };
+
         OllamaChat {
             ollama: Ollama::default(),
             history: ChatHistory::new(),
@@ -99,6 +111,7 @@ impl OllamaChat {
 
         let history = self.history.clone();
         let tool_confirmation = self.settings_manager.lock().unwrap().tool_confirmation;
+        let verbose_tool_calls = self.settings_manager.lock().unwrap().verbose_tool_calls;
         tokio::spawn(async move {
             while let Some(Ok(res)) = stream.next().await {
                 {
@@ -119,20 +132,22 @@ impl OllamaChat {
                         };
 
                         let mut stdout = stdout();
-                        stdout
-                            .write_all(
-                                format!(
-                                    "{}\n",
-                                    render_tool_call_request(
-                                        call.function.name.clone(),
-                                        args.clone()
+                        if verbose_tool_calls || tool_confirmation {
+                            stdout
+                                .write_all(
+                                    format!(
+                                        "{}\n",
+                                        render_tool_call_request(
+                                            call.function.name.clone(),
+                                            args.clone()
+                                        )
                                     )
+                                    .as_bytes(),
                                 )
-                                .as_bytes(),
-                            )
-                            .await
-                            .unwrap();
-                        stdout.flush().await.unwrap();
+                                .await
+                                .unwrap();
+                            stdout.flush().await.unwrap();
+                        }
 
                         let mut call_tool = true;
                         if tool_confirmation {
@@ -165,17 +180,19 @@ impl OllamaChat {
                                 .await
                             {
                                 Ok(result) => {
-                                    stdout
-                                        .write_all(
-                                            format!(
-                                                "{}\n",
-                                                render_tool_call_result(&result.content)
+                                    if verbose_tool_calls || tool_confirmation {
+                                        stdout
+                                            .write_all(
+                                                format!(
+                                                    "{}\n",
+                                                    render_tool_call_result(&result.content)
+                                                )
+                                                .as_bytes(),
                                             )
-                                            .as_bytes(),
-                                        )
-                                        .await
-                                        .unwrap();
-                                    stdout.flush().await.unwrap();
+                                            .await
+                                            .unwrap();
+                                        stdout.flush().await.unwrap();
+                                    }
 
                                     tool_messages.push(ChatMessage::tool(
                                         serde_json::to_string(&result.content).unwrap_or_default(),

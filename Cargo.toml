@@ -2,8 +2,11 @@
 name = "omcp"
 version = "0.1.0"
 edition = "2024"
+author = "Av32000"
+description = "Ollama CLI client to connect LLM to MCP Servers locally"
 
 [dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
 crossterm = "0.29.0"
 dirs = "6.0.0"
 ollama-rs = { version = "0.3.2", features = ["stream"] }

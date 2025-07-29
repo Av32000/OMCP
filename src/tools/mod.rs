@@ -5,10 +5,12 @@ use rmcp::model::{CallToolRequestParam, CallToolResult};
 use serde_json::{Map, Value as JsonValue};
 use server::MCPServer;
 
+use crate::args::Args;
 use crate::tools::server::MCPServerConfig;
 use crate::{AppResult, tools::tool::MCPTool};
+use crate::{ConfigFile, get_config_path};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct ToolManager {
@@ -216,5 +218,71 @@ impl ToolManager {
         }
 
         Ok(servers)
+    }
+
+    pub fn load_mcp_server_from_args(args: Args) -> AppResult<Vec<MCPServer>> {
+        let mut services = Vec::new();
+
+        let json_mcp_configs = if !args.json_mcp_config.is_empty() {
+            args.json_mcp_config
+                .iter()
+                .map(|s| PathBuf::from(s))
+                .collect::<Vec<_>>()
+        } else {
+            vec![get_config_path(ConfigFile::MCPServers)]
+        };
+
+        for config in json_mcp_configs {
+            let loaded_services: Vec<MCPServer> =
+                ToolManager::load_mcp_servers_from_config(&config).unwrap_or_else(|_| {
+                    eprintln!("Failed to load MCP servers from config: {:?}", config);
+                    vec![]
+                });
+            services.extend(loaded_services);
+        }
+
+        for stdio_server in args.stdio_server {
+            let (file_path, ext) = stdio_server
+                .rsplit_once('.')
+                .unwrap_or((stdio_server.as_str(), ""));
+
+            let server = MCPServer::new(MCPServerConfig::Stdio {
+                name: file_path.to_string(),
+                command: if ext == "js" {
+                    "node".to_string()
+                } else if ext == "py" {
+                    "python3".to_string()
+                } else {
+                    eprintln!("Unsupported file extension for stdio server: {}", ext);
+                    continue;
+                },
+                args: vec![file_path.to_string()].into(),
+                env: None,
+                disabled: false,
+            });
+            services.push(server);
+        }
+
+        for sse_server in args.sse_server {
+            let server = MCPServer::new(MCPServerConfig::SSE {
+                name: sse_server.clone(),
+                url: sse_server,
+                headers: None,
+                disabled: false,
+            });
+            services.push(server);
+        }
+
+        for http_server in args.streamable_http_server {
+            let server = MCPServer::new(MCPServerConfig::StreamableHttp {
+                name: http_server.clone(),
+                url: http_server,
+                headers: None,
+                disabled: false,
+            });
+            services.push(server);
+        }
+
+        Ok(services)
     }
 }

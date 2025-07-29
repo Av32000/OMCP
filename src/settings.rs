@@ -1,13 +1,13 @@
 use std::{
     fs::{read_to_string, write},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 
 use crate::{
-    AppResult, get_config_path,
+    AppResult, ConfigFile, get_config_path,
     ui::{
         AppUIRenderable, RoundedBox,
         input::{MenuChoice, menu_selection, text_input},
@@ -43,6 +43,9 @@ fn format_settings_value(value: Value) -> String {
 pub struct SettingsManager {
     pub model_name: String,
     pub tool_confirmation: bool,
+    pub config_file_path: PathBuf,
+    pub auto_save_config: bool,
+    pub verbose_tool_calls: bool,
 }
 
 impl SettingsManager {
@@ -134,8 +137,10 @@ impl SettingsManager {
             }
         }
 
-        self.save_to_file(&get_config_path(crate::ConfigFile::Settings))
-            .expect("Failed to save updated settings to config file");
+        if self.auto_save_config {
+            self.save_to_file(&self.config_file_path)
+                .expect("Failed to save updated settings to config file");
+        }
     }
 
     pub fn load_from_file(file_path: &Path) -> AppResult<SettingsManager> {
@@ -156,6 +161,9 @@ impl Default for SettingsManager {
         Self {
             model_name: "qwen2.5:7b".to_string(),
             tool_confirmation: true,
+            config_file_path: get_config_path(ConfigFile::Settings),
+            auto_save_config: true,
+            verbose_tool_calls: true,
         }
     }
 }
