@@ -75,7 +75,7 @@ pub async fn render_model_info(model_name: String, ollama: &Ollama) -> String {
                     .as_str(),
             );
         }
-        Err(err) => {
+        Err(_) => {
             printed_info.push_str("Unable to retrieve model info");
         }
     };

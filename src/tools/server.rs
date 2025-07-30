@@ -17,6 +17,7 @@ use crate::{AppResult, tools::tool::MCPTool};
 #[derive(Debug, Clone)]
 pub enum MCPServerConfig {
     Stdio {
+        #[allow(dead_code)]
         name: String,
         command: String,
         args: Option<Vec<String>>,
@@ -24,12 +25,14 @@ pub enum MCPServerConfig {
         disabled: bool,
     },
     SSE {
+        #[allow(dead_code)]
         name: String,
         url: String,
         headers: Option<HeaderMap>,
         disabled: bool,
     },
     StreamableHttp {
+        #[allow(dead_code)]
         name: String,
         url: String,
         headers: Option<HeaderMap>,
@@ -58,26 +61,41 @@ impl MCPServer {
     pub async fn initialize(&mut self) -> AppResult<()> {
         let client = match &self.config {
             MCPServerConfig::Stdio {
-                name,
+                name: _,
                 command,
                 args,
                 env,
                 disabled,
             } => {
+                if *disabled {
+                    return Ok(());
+                }
+
                 let mut command = Command::new(command);
 
                 if let Some(args) = args {
                     command.args(args.iter());
                 }
-
+                if let Some(env_vars) = env {
+                    for var in env_vars {
+                        let mut parts = var.splitn(2, '=');
+                        if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
+                            command.env(key, value);
+                        }
+                    }
+                }
                 ().serve(TokioChildProcess::new(command)?).await?
             }
             MCPServerConfig::SSE {
-                name,
+                name: _,
                 url,
                 headers,
                 disabled,
             } => {
+                if *disabled {
+                    return Ok(());
+                }
+
                 let mut reqwest_client = Client::builder();
 
                 if let Some(headers) = headers {
@@ -95,11 +113,15 @@ impl MCPServer {
                     .await?
             }
             MCPServerConfig::StreamableHttp {
-                name,
+                name: _,
                 url,
                 headers,
                 disabled,
             } => {
+                if *disabled {
+                    return Ok(());
+                }
+
                 let mut reqwest_client = Client::builder();
 
                 if let Some(headers) = headers {

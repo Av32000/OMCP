@@ -2,7 +2,6 @@
 name = "omcp"
 version = "0.1.0"
 edition = "2024"
-author = "Av32000"
 description = "Ollama CLI client to connect LLM to MCP Servers locally"
 
 [dependencies]

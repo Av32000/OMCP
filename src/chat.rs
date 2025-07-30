@@ -76,7 +76,7 @@ impl OllamaChat {
         };
 
         OllamaChat {
-            ollama: Ollama::default(),
+            ollama,
             history: ChatHistory::new(),
             tool_manager,
             settings_manager,

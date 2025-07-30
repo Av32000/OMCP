@@ -17,16 +17,6 @@ pub struct ToolManager {
     services: Vec<MCPServer>,
 }
 
-pub struct MCPServerConfigSchema {
-    r#type: Option<String>,
-    command: Option<String>,
-    url: Option<String>,
-    args: Option<Vec<String>>,
-    env: Option<Vec<String>>,
-    headers: Option<Map<String, JsonValue>>,
-    disabled: Option<bool>,
-}
-
 impl ToolManager {
     pub fn new(services: Vec<MCPServer>) -> Self {
         ToolManager { services }

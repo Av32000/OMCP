@@ -54,7 +54,7 @@ async fn main() -> AppResult<()> {
 
     let settings_manager = match SettingsManager::load_from_file(&json_config_path) {
         Ok(settings) => Arc::new(Mutex::new(settings)),
-        Err(e) => {
+        Err(_) => {
             eprintln!("Failed to load settings from config file. Loading default config",);
             Arc::new(Mutex::new(SettingsManager::default()))
         }

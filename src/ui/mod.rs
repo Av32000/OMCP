@@ -155,7 +155,7 @@ impl AppUI {
                             .collect::<Vec<_>>();
                         let selected = input::menu_toggle("Toggle Tools : ", choices).await;
 
-                        for (i, choice) in selected.iter().enumerate() {
+                        for choice in selected.iter() {
                             tools.set_tool_status(&choice.0.name, choice.1).unwrap();
                         }
                         println!("{}", render_available_tools(&tools.get_tools()));
