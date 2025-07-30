@@ -11,9 +11,15 @@ use crate::{
     ui::{
         AppUIRenderable, RoundedBox,
         input::{MenuChoice, menu_selection, text_input},
-        utils::AnsiColor,
+        utils::{AnsiColor, colorize_text},
     },
 };
+
+static CATEGORIES: [(&str, &[&str]); 3] = [
+    ("Model", &[&"model_name"]),
+    ("Tool Calls", &["verbose_tool_calls", "tool_confirmation"]),
+    ("Configuration", &["auto_save_config", "config_file_path"]),
+];
 
 fn format_settings_key(key: String) -> String {
     key.split('_')
@@ -31,10 +37,10 @@ fn format_settings_key(key: String) -> String {
 fn format_settings_value(value: Value) -> String {
     let value = value.to_string();
     match value.as_str() {
-        "true" => "Enabled".to_string(),
-        "false" => "Disabled".to_string(),
-        "null" => "Not set".to_string(),
-        _ if value.is_empty() => "Not set".to_string(),
+        "true" => colorize_text(&"Enabled", AnsiColor::BrightGreen),
+        "false" => colorize_text(&"Disabled", AnsiColor::BrightRed),
+        "null" => colorize_text(&"Not set", AnsiColor::BrightBlack),
+        _ if value.is_empty() => colorize_text(&"Not set", AnsiColor::BrightBlack),
         _ => value.to_string(),
     }
 }
@@ -42,10 +48,10 @@ fn format_settings_value(value: Value) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsManager {
     pub model_name: String,
-    pub tool_confirmation: bool,
-    pub config_file_path: PathBuf,
-    pub auto_save_config: bool,
     pub verbose_tool_calls: bool,
+    pub tool_confirmation: bool,
+    pub auto_save_config: bool,
+    pub config_file_path: PathBuf,
 }
 
 impl SettingsManager {
@@ -174,12 +180,24 @@ impl AppUIRenderable for SettingsManager {
 
         let mut formatted_content = String::new();
         if let Value::Object(map) = json_value {
-            for (key, value) in map {
-                formatted_content.push_str(&format!(
-                    "{}: {}\n",
-                    format_settings_key(key),
-                    format_settings_value(value)
+            for (category, keys) in CATEGORIES.iter() {
+                formatted_content.push_str(&colorize_text(
+                    &format!("{}\n", category),
+                    AnsiColor::BrightYellow,
                 ));
+                for key in *keys {
+                    if let Some(value) = map.get(*key) {
+                        formatted_content.push_str(&format!(
+                            "{}: {}\n",
+                            format_settings_key(key.to_string()),
+                            format_settings_value(value.clone())
+                        ));
+                    }
+                }
+
+                if category != &CATEGORIES.last().unwrap().0 {
+                    formatted_content.push_str("\n \n");
+                }
             }
         } else {
             return "Invalid settings format".to_string();

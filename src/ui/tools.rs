@@ -53,9 +53,9 @@ pub fn render_available_tools(tools: &[MCPTool]) -> String {
 pub fn render_tool_call_request(name: String, args: Map<String, Value>) -> String {
     RoundedBox::new(
         &format!(
-            "Name: {}\nArguments: {:?}",
+            "Name: {}\nArguments: \n{}",
             name,
-            serde_json::to_string(&args).unwrap_or_default()
+            serde_json::to_string_pretty(&args).unwrap_or_default()
         ),
         Some("Tool Call Request"),
         Some(AnsiColor::BrightMagenta),
@@ -65,10 +65,18 @@ pub fn render_tool_call_request(name: String, args: Map<String, Value>) -> Strin
 }
 
 pub fn render_tool_call_result(result: &Vec<Annotated<RawContent>>) -> String {
+    let result = match result.get(0) {
+        Some(first_result) => serde_json::to_value(first_result)
+            .ok()
+            .and_then(|v| v.get("text").cloned())
+            .and_then(|v| v.as_str().map(String::from))
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .and_then(|v| serde_json::to_string_pretty(&v).ok())
+            .unwrap_or_else(|| serde_json::to_string_pretty(first_result).unwrap_or_default()),
+        None => String::new(),
+    };
     RoundedBox::new(
-        serde_json::to_string_pretty(result)
-            .unwrap_or_default()
-            .as_str(),
+        &result,
         Some("Tool Call Result"),
         Some(AnsiColor::BrightGreen),
         false,
