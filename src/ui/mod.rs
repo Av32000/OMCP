@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 
 use crate::{
     chat::OllamaChat,
-    model::select_model,
+    model::{render_model_info, select_model},
     settings::SettingsManager,
     tools::ToolManager,
     ui::{
@@ -187,61 +187,14 @@ impl AppUI {
                 },
                 "/model" => match args.as_str() {
                     "info" => {
-                        let mut printed_info = String::new();
-
-                        let model_name = self.settings_manager.lock().unwrap().model_name.clone();
-                        match self
-                            .ollama_chat
-                            .ollama
-                            .show_model_info(model_name.clone())
-                            .await
-                        {
-                            Ok(info) => {
-                                let mut parameters_string = String::new();
-
-                                if let Some(params) = info.model_info.get("general.parameter_count")
-                                {
-                                    parameters_string.push_str(&params.to_string());
-                                }
-
-                                if let Some(params) = info.model_info.get("general.size_label") {
-                                    if parameters_string.is_empty() {
-                                        parameters_string.push_str(&params.to_string());
-                                    } else {
-                                        parameters_string.push_str(&format!(" ({})", params));
-                                    }
-                                }
-
-                                if parameters_string.is_empty() {
-                                    parameters_string = "Not available".to_string()
-                                };
-
-                                printed_info.push_str(&format!(
-                                    "Model Name: {}\nParameters: {}\n",
-                                    model_name, parameters_string
-                                ));
-                                printed_info.push_str("\n \n");
-                                printed_info.push_str(&colorize_text(
-                                    "Capabilities\n",
-                                    AnsiColor::BrightBlue,
-                                ));
-                                printed_info.push_str(
-                                    info.capabilities
-                                        .iter()
-                                        .map(|cap| format!("- {}\n", cap))
-                                        .collect::<String>()
-                                        .as_str(),
-                                );
-                            }
-                            Err(err) => {
-                                printed_info.push_str("Unable to retrieve model info");
-                            }
-                        };
-
                         println!(
                             "{}",
                             RoundedBox::new(
-                                &printed_info,
+                                &render_model_info(
+                                    self.settings_manager.lock().unwrap().model_name.clone(),
+                                    &self.ollama_chat.ollama
+                                )
+                                .await,
                                 Some("Model Info"),
                                 Some(AnsiColor::BrightBlue),
                                 false
@@ -250,17 +203,17 @@ impl AppUI {
                         );
                     }
                     "select" => {
-                        let model = select_model(self.ollama_chat.ollama.clone())
-                            .await
-                            .unwrap_or_else(|err| {
-                                eprintln!("Error selecting model: {}", err);
-                                return String::new();
-                            });
+                        let model =
+                            select_model(&self.ollama_chat.ollama)
+                                .await
+                                .unwrap_or_else(|err| {
+                                    eprintln!("Error selecting model: {}", err);
+                                    return String::new();
+                                });
 
                         if !model.is_empty() {
                             let mut settings = self.settings_manager.lock().unwrap();
                             settings.model_name = model;
-                            println!("{}", settings.render(true));
                             if settings.auto_save_config {
                                 settings
                                     .save_to_file(&settings.config_file_path)
@@ -268,6 +221,21 @@ impl AppUI {
                                         eprintln!("Error saving settings: {}", err);
                                     });
                             }
+
+                            println!(
+                                "{}",
+                                RoundedBox::new(
+                                    &render_model_info(
+                                        settings.model_name.clone(),
+                                        &self.ollama_chat.ollama
+                                    )
+                                    .await,
+                                    Some("Model Info"),
+                                    Some(AnsiColor::BrightBlue),
+                                    false
+                                )
+                                .render()
+                            );
                         }
                     }
                     "load" => {
