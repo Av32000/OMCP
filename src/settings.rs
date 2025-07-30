@@ -16,7 +16,7 @@ use crate::{
 };
 
 static CATEGORIES: [(&str, &[&str]); 3] = [
-    ("Model", &[&"model_name"]),
+    ("Model", &["model_name", "show_thinking"]),
     ("Tool Calls", &["verbose_tool_calls", "tool_confirmation"]),
     ("Configuration", &["auto_save_config", "config_file_path"]),
 ];
@@ -48,6 +48,7 @@ fn format_settings_value(value: Value) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsManager {
     pub model_name: String,
+    pub show_thinking: bool,
     pub verbose_tool_calls: bool,
     pub tool_confirmation: bool,
     pub auto_save_config: bool,
@@ -166,6 +167,7 @@ impl Default for SettingsManager {
     fn default() -> Self {
         Self {
             model_name: "qwen2.5:7b".to_string(),
+            show_thinking: true,
             tool_confirmation: true,
             config_file_path: get_config_path(ConfigFile::Settings),
             auto_save_config: true,

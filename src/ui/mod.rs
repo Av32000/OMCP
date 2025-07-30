@@ -53,6 +53,8 @@ impl AppUI {
     pub async fn run(&mut self) -> crate::AppResult<()> {
         let mut stdout = stdout();
 
+        let mut is_thinking = false;
+
         while self.running {
             let input = input::text_input("> ");
 
@@ -67,8 +69,37 @@ impl AppUI {
                 .await?;
 
             while let Some(res) = stream.recv().await {
-                stdout.write_all(res.message.content.as_bytes()).await?;
-                stdout.flush().await?;
+                if let Some(message) = res.message.thinking {
+                    if self.settings_manager.lock().unwrap().show_thinking {
+                        if !is_thinking {
+                            stdout
+                                .write_all(
+                                    colorize_text("<thinking>\n", AnsiColor::BrightBlack)
+                                        .as_bytes(),
+                                )
+                                .await?;
+                        }
+                        stdout
+                            .write_all(colorize_text(&message, AnsiColor::BrightBlack).as_bytes())
+                            .await?;
+                        stdout.flush().await?;
+                    }
+                    is_thinking = true;
+                } else {
+                    if is_thinking {
+                        if self.settings_manager.lock().unwrap().show_thinking {
+                            stdout
+                                .write_all(
+                                    colorize_text("</thinking>\n", AnsiColor::BrightBlack)
+                                        .as_bytes(),
+                                )
+                                .await?;
+                        }
+                        is_thinking = false;
+                    }
+                    stdout.write_all(res.message.content.as_bytes()).await?;
+                    stdout.flush().await?;
+                }
             }
 
             println!()
