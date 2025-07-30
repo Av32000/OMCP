@@ -1,5 +1,6 @@
 mod args;
 mod chat;
+mod model;
 mod settings;
 mod tools;
 mod ui;

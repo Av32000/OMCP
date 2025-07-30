@@ -2,7 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use ollama_rs::{
     Ollama,
-    generation::chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
+    generation::{
+        chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
+        tools::ToolInfo,
+    },
 };
 use tokio::{
     io::{AsyncWriteExt, stdout},
@@ -48,7 +51,7 @@ impl ChatHistory {
 
 #[derive(Clone, Debug)]
 pub struct OllamaChat {
-    ollama: Ollama,
+    pub ollama: Ollama,
     history: ChatHistory,
     tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
     settings_manager: Arc<Mutex<SettingsManager>>,
@@ -85,20 +88,43 @@ impl OllamaChat {
     ) -> AppResult<Receiver<ChatMessageResponse>> {
         let model_name = self.settings_manager.lock().unwrap().model_name.clone();
 
+        let tools_capability = self
+            .ollama
+            .show_model_info(model_name.clone())
+            .await
+            .unwrap()
+            .capabilities
+            .contains(&"tools".to_string());
+
+        let thinking_capability = self
+            .ollama
+            .show_model_info(model_name.clone())
+            .await
+            .unwrap()
+            .capabilities
+            .contains(&"thinking".to_string());
+
+        let mut request = ChatMessageRequest::new(model_name.clone(), messages);
+        let tools: Vec<ToolInfo> = self
+            .tool_manager
+            .lock()
+            .await
+            .get_enabled_tools()
+            .iter()
+            .map(|t| t.tool_info.to_tool_info())
+            .collect();
+
+        if tools_capability {
+            request = request.tools(tools.clone());
+        }
+
+        if thinking_capability {
+            request = request.think(true);
+        }
+
         let mut stream = match self
             .ollama
-            .send_chat_messages_with_history_stream(
-                self.history.get_history(),
-                ChatMessageRequest::new(model_name.clone(), messages).tools(
-                    self.tool_manager
-                        .lock()
-                        .await
-                        .get_enabled_tools()
-                        .iter()
-                        .map(|t| t.tool_info.to_tool_info())
-                        .collect(),
-                ),
-            )
+            .send_chat_messages_with_history_stream(self.history.get_history(), request)
             .await
         {
             Ok(stream) => stream,
@@ -219,11 +245,17 @@ impl OllamaChat {
                         }
                     }
 
+                    let mut request = ChatMessageRequest::new(model_name.clone(), tool_messages);
+                    if tools_capability {
+                        request = request.tools(tools.clone());
+                    }
+
+                    if thinking_capability {
+                        request = request.think(true);
+                    }
+
                     let followup_stream = match Ollama::default()
-                        .send_chat_messages_with_history_stream(
-                            history.get_history(),
-                            ChatMessageRequest::new(model_name.clone(), tool_messages),
-                        )
+                        .send_chat_messages_with_history_stream(history.get_history(), request)
                         .await
                     {
                         Ok(s) => s,

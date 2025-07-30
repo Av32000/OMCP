@@ -3,11 +3,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ollama_rs::generation::chat::ChatMessage;
+use ollama_rs::generation::{chat::ChatMessage, completion::request::GenerationRequest};
 use tokio::io::{AsyncWriteExt, stdout};
+use tokio_stream::StreamExt;
 
 use crate::{
     chat::OllamaChat,
+    model::select_model,
     settings::SettingsManager,
     tools::ToolManager,
     ui::{
@@ -152,6 +154,144 @@ impl AppUI {
                         println!("Usage: /settings [show|edit]");
                     }
                 },
+                "/model" => match args.as_str() {
+                    "info" => {
+                        let mut printed_info = String::new();
+
+                        let model_name = self.settings_manager.lock().unwrap().model_name.clone();
+                        match self
+                            .ollama_chat
+                            .ollama
+                            .show_model_info(model_name.clone())
+                            .await
+                        {
+                            Ok(info) => {
+                                let mut parameters_string = String::new();
+
+                                if let Some(params) = info.model_info.get("general.parameter_count")
+                                {
+                                    parameters_string.push_str(&params.to_string());
+                                }
+
+                                if let Some(params) = info.model_info.get("general.size_label") {
+                                    if parameters_string.is_empty() {
+                                        parameters_string.push_str(&params.to_string());
+                                    } else {
+                                        parameters_string.push_str(&format!(" ({})", params));
+                                    }
+                                }
+
+                                if parameters_string.is_empty() {
+                                    parameters_string = "Not available".to_string()
+                                };
+
+                                printed_info.push_str(&format!(
+                                    "Model Name: {}\nParameters: {}\n",
+                                    model_name, parameters_string
+                                ));
+                                printed_info.push_str("\n \n");
+                                printed_info.push_str(&colorize_text(
+                                    "Capabilities\n",
+                                    AnsiColor::BrightBlue,
+                                ));
+                                printed_info.push_str(
+                                    info.capabilities
+                                        .iter()
+                                        .map(|cap| format!("- {}\n", cap))
+                                        .collect::<String>()
+                                        .as_str(),
+                                );
+                            }
+                            Err(err) => {
+                                printed_info.push_str("Unable to retrieve model info");
+                            }
+                        };
+
+                        println!(
+                            "{}",
+                            RoundedBox::new(
+                                &printed_info,
+                                Some("Model Info"),
+                                Some(AnsiColor::BrightBlue),
+                                false
+                            )
+                            .render()
+                        );
+                    }
+                    "select" => {
+                        let model = select_model(self.ollama_chat.ollama.clone())
+                            .await
+                            .unwrap_or_else(|err| {
+                                eprintln!("Error selecting model: {}", err);
+                                return String::new();
+                            });
+
+                        if !model.is_empty() {
+                            let mut settings = self.settings_manager.lock().unwrap();
+                            settings.model_name = model;
+                            println!("{}", settings.render(true));
+                            if settings.auto_save_config {
+                                settings
+                                    .save_to_file(&settings.config_file_path)
+                                    .unwrap_or_else(|err| {
+                                        eprintln!("Error saving settings: {}", err);
+                                    });
+                            }
+                        }
+                    }
+                    "load" => {
+                        match self
+                            .ollama_chat
+                            .ollama
+                            .generate(GenerationRequest::new(
+                                self.settings_manager.lock().unwrap().model_name.clone(),
+                                "",
+                            ))
+                            .await
+                        {
+                            Ok(_) => println!("Model loaded successfully!"),
+                            Err(err) => eprintln!("Error loading model: {}", err),
+                        };
+                    }
+                    "pull" => {
+                        match self
+                            .ollama_chat
+                            .ollama
+                            .pull_model_stream(
+                                self.settings_manager.lock().unwrap().model_name.clone(),
+                                false,
+                            )
+                            .await
+                        {
+                            Ok(mut stream) => {
+                                while let Some(Ok(res)) = stream.next().await {
+                                    let mut printed_message = res.message;
+                                    if let Some(total) = res.total {
+                                        if let Some(completed) = res.completed {
+                                            printed_message.push_str(&format!(
+                                                " ({}%)",
+                                                completed * 100 / total
+                                            ));
+                                        }
+                                    }
+
+                                    if printed_message == "success" {
+                                        printed_message = "Model pulled successfully!".to_string();
+                                    }
+
+                                    print!("\r\x1b[K{}", printed_message);
+                                    use std::io::{self, Write};
+                                    io::stdout().flush().unwrap();
+                                }
+                                println!(); // Add final newline when done
+                            }
+                            Err(err) => eprintln!("Error pulling model: {}", err),
+                        }
+                    }
+                    _ => {
+                        println!("Usage: /model [info|select|load|pull]");
+                    }
+                },
                 "/help" => {
                     let help = vec![
                         ("/quit", "Exit the application"),
@@ -161,6 +301,10 @@ impl AppUI {
                         (
                             "/settings [show|edit|save]",
                             "Show, Edit or Save current settings",
+                        ),
+                        (
+                            "/model [info|select|load|pull]",
+                            "Manage model used by Ollama",
                         ),
                         ("/help", "Show this help message"),
                     ];
