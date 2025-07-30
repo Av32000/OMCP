@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex};
 use ollama_rs::{
     Ollama,
     generation::{
-        chat::{ChatMessage, ChatMessageResponse, request::ChatMessageRequest},
+        chat::{ChatMessage, ChatMessageResponse, MessageRole, request::ChatMessageRequest},
         tools::ToolInfo,
     },
+    models::ModelOptions,
 };
 use tokio::{
     io::{AsyncWriteExt, stdout},
@@ -87,6 +88,7 @@ impl OllamaChat {
         messages: Vec<ChatMessage>,
     ) -> AppResult<Receiver<ChatMessageResponse>> {
         let model_name = self.settings_manager.lock().unwrap().model_name.clone();
+        let mut messages = messages;
 
         let tools_capability = self
             .ollama
@@ -104,7 +106,25 @@ impl OllamaChat {
             .capabilities
             .contains(&"thinking".to_string());
 
-        let mut request = ChatMessageRequest::new(model_name.clone(), messages);
+        let mut model_options = ModelOptions::default();
+
+        {
+            let settings = self.settings_manager.lock().unwrap();
+            model_options = model_options
+                .seed(settings.model_seed)
+                .temperature(settings.model_temperature);
+
+            if !settings.model_system_prompt.is_empty() {
+                if messages.is_empty() || messages[0].role != MessageRole::System {
+                    messages.insert(0, ChatMessage::system(settings.model_system_prompt.clone()));
+                } else {
+                    messages[0].content = settings.model_system_prompt.clone();
+                }
+            }
+        }
+
+        let mut request =
+            ChatMessageRequest::new(model_name.clone(), messages).options(model_options.clone());
         let tools: Vec<ToolInfo> = self
             .tool_manager
             .lock()
@@ -245,7 +265,8 @@ impl OllamaChat {
                         }
                     }
 
-                    let mut request = ChatMessageRequest::new(model_name.clone(), tool_messages);
+                    let mut request = ChatMessageRequest::new(model_name.clone(), tool_messages)
+                        .options(model_options.clone());
                     if tools_capability {
                         request = request.tools(tools.clone());
                     }

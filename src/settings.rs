@@ -16,10 +16,21 @@ use crate::{
 };
 
 static CATEGORIES: [(&str, &[&str]); 3] = [
-    ("Model", &["model_name", "show_thinking"]),
+    (
+        "Model",
+        &[
+            "model_name",
+            "show_thinking",
+            "model_seed",
+            "model_temperature",
+            "model_system_prompt",
+        ],
+    ),
     ("Tool Calls", &["verbose_tool_calls", "tool_confirmation"]),
     ("Configuration", &["auto_save_config", "config_file_path"]),
 ];
+
+static OPTIONAL_VALUES: [&str; 1] = ["model_system_prompt"];
 
 fn format_settings_key(key: String) -> String {
     key.split('_')
@@ -41,6 +52,7 @@ fn format_settings_value(value: Value) -> String {
         "false" => colorize_text(&"Disabled", AnsiColor::BrightRed),
         "null" => colorize_text(&"Not set", AnsiColor::BrightBlack),
         _ if value.is_empty() => colorize_text(&"Not set", AnsiColor::BrightBlack),
+        _ if value == "\"\"" => colorize_text(&"Not set", AnsiColor::BrightBlack),
         _ => value.to_string(),
     }
 }
@@ -49,6 +61,9 @@ fn format_settings_value(value: Value) -> String {
 pub struct SettingsManager {
     pub model_name: String,
     pub show_thinking: bool,
+    pub model_seed: i32,
+    pub model_temperature: f32,
+    pub model_system_prompt: String,
     pub verbose_tool_calls: bool,
     pub tool_confirmation: bool,
     pub auto_save_config: bool,
@@ -87,7 +102,7 @@ impl SettingsManager {
         match current_value {
             Value::String(_) => {
                 let new_value = text_input(&format!("New value for {}: ", key));
-                if !new_value.is_empty() {
+                if !new_value.is_empty() || OPTIONAL_VALUES.contains(&key.as_str()) {
                     self.update_setting(&key, Value::String(new_value));
                 }
             }
@@ -168,6 +183,9 @@ impl Default for SettingsManager {
         Self {
             model_name: "qwen2.5:7b".to_string(),
             show_thinking: true,
+            model_seed: 0,
+            model_temperature: 0.8,
+            model_system_prompt: String::new(),
             tool_confirmation: true,
             config_file_path: get_config_path(ConfigFile::Settings),
             auto_save_config: true,
