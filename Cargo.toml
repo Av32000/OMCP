@@ -1,6 +1,6 @@
 [package]
 name = "omcp"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "Ollama CLI client to connect LLM to MCP Servers locally"
 
