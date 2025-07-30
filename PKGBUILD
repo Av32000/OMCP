@@ -8,7 +8,7 @@ pkgdesc='A powerful CLI client that connects Ollama language models to Model Con
 url='https://github.com/Av32000/OMCP'
 license=('MIT')
 makedepends=('cargo')
-depends=()
+depends=('gcc-libs' 'glibc' 'openssl')
 arch=('x86_64')
 options=(!debug !lto)
 source=($url/archive/v$pkgver/$pkgname-$pkgver.tar.gz)
@@ -35,5 +35,5 @@ package() {
     cd "$srcdir/OMCP-$pkgver"
 
     install -Dm0755 -t "$pkgdir/usr/bin/" "target/release/$_pkgname"
-    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${_pkgname}/LICENSE"
+    install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

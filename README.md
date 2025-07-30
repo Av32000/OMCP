@@ -17,6 +17,14 @@ A powerful CLI client that connects [Ollama](https://ollama.com/) language model
 
 ## 📦 Installation
 
+### From Arch User Repository (AUR)
+
+OMCP is available in the AUR as `omcp-git`. You can install it using an AUR helper like `yay`:
+
+```bash
+yay -S omcp-git
+```
+
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (latest stable version)
