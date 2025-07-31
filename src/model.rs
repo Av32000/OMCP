@@ -76,7 +76,13 @@ pub async fn render_model_info(model_name: String, ollama: &Ollama) -> String {
             );
         }
         Err(_) => {
-            printed_info.push_str("Unable to retrieve model info");
+            printed_info.push_str(
+                format!(
+                    "Model {} not found locally.\nPull it to access its information.",
+                    model_name
+                )
+                .as_str(),
+            );
         }
     };
 
