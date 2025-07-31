@@ -10,6 +10,7 @@ use tokio::io::{AsyncWriteExt, stdout};
 use tokio_stream::StreamExt;
 
 use crate::{
+    agent::{AgentMode, AgentStatus},
     chat::OllamaChat,
     model::{render_model_info, select_model},
     settings::SettingsManager,
@@ -31,6 +32,7 @@ pub struct AppUI {
     ollama_chat: OllamaChat,
     tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
     settings_manager: Arc<Mutex<SettingsManager>>,
+    agent_mode: AgentMode,
     running: bool,
 }
 
@@ -48,6 +50,7 @@ impl AppUI {
             ollama_chat,
             tool_manager,
             settings_manager,
+            agent_mode: AgentMode::new(),
             running: true,
         }
     }
@@ -63,6 +66,20 @@ impl AppUI {
             let input = input.trim_end();
             if self.parse_command(input).await {
                 continue;
+            }
+
+            match self.agent_mode.get_status() {
+                AgentStatus::Ready | AgentStatus::Plan => {
+                    if let Err(e) = self
+                        .agent_mode
+                        .handle_prompt(input, &mut self.ollama_chat)
+                        .await
+                    {
+                        eprintln!("Error handling agent response: {}", e);
+                    }
+                    continue;
+                }
+                _ => {}
             }
 
             let mut stream = self
@@ -132,6 +149,15 @@ impl AppUI {
                 "/history" => {
                     dbg!(self.ollama_chat.get_history());
                 }
+                "/agent" => match self.agent_mode.get_status() {
+                    AgentStatus::Disabled => {
+                        self.agent_mode.init(&mut self.ollama_chat);
+                        println!("Agent mode enabled.");
+                    }
+                    _ => {
+                        println!("Agent mode is already enabled.");
+                    }
+                },
                 "/tools" => match *args.get(0).unwrap_or(&&"") {
                     "show" => {
                         let tools = self.tool_manager.lock().await;
@@ -353,6 +379,7 @@ impl AppUI {
                         ("/quit", "Exit the application"),
                         ("/clear", "Clear the chat context"),
                         ("/history", "Show chat history"),
+                        ("/agent", "Enable agent mode - Feature under development"),
                         ("/tools [show|toggle]", "List or Toggle available tools"),
                         (
                             "/settings [show|edit|save]",

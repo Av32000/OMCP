@@ -1096,6 +1096,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "terminal_size",

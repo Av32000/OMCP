@@ -4,6 +4,7 @@ use ollama_rs::{
     Ollama,
     generation::{
         chat::{ChatMessage, ChatMessageResponse, MessageRole, request::ChatMessageRequest},
+        parameters::FormatType,
         tools::ToolInfo,
     },
     models::ModelOptions,
@@ -56,6 +57,7 @@ pub struct OllamaChat {
     history: ChatHistory,
     tool_manager: Arc<tokio::sync::Mutex<ToolManager>>,
     settings_manager: Arc<Mutex<SettingsManager>>,
+    pub use_system_prompt: bool,
 }
 
 impl OllamaChat {
@@ -80,6 +82,7 @@ impl OllamaChat {
             history: ChatHistory::new(),
             tool_manager,
             settings_manager,
+            use_system_prompt: true,
         }
     }
 
@@ -114,7 +117,7 @@ impl OllamaChat {
                 .seed(settings.model_seed)
                 .temperature(settings.model_temperature);
 
-            if !settings.model_system_prompt.is_empty() {
+            if !settings.model_system_prompt.is_empty() && self.use_system_prompt {
                 if messages.is_empty() || messages[0].role != MessageRole::System {
                     messages.insert(0, ChatMessage::system(settings.model_system_prompt.clone()));
                 } else {
@@ -297,6 +300,60 @@ impl OllamaChat {
         });
 
         Ok(rx)
+    }
+
+    pub async fn formated_request(
+        &mut self,
+        messages: Vec<ChatMessage>,
+        format: FormatType,
+    ) -> AppResult<ChatMessageResponse> {
+        let model_name = self.settings_manager.lock().unwrap().model_name.clone();
+
+        let tools_capability = self
+            .ollama
+            .show_model_info(model_name.clone())
+            .await
+            .unwrap()
+            .capabilities
+            .contains(&"tools".to_string());
+
+        let thinking_capability = self
+            .ollama
+            .show_model_info(model_name.clone())
+            .await
+            .unwrap()
+            .capabilities
+            .contains(&"thinking".to_string());
+
+        let model_options = ModelOptions::default().temperature(0.0);
+
+        let mut request = ChatMessageRequest::new(model_name.clone(), messages)
+            .options(model_options.clone())
+            .format(format);
+
+        let tools: Vec<ToolInfo> = self
+            .tool_manager
+            .lock()
+            .await
+            .get_enabled_tools()
+            .iter()
+            .map(|t| t.tool_info.to_tool_info())
+            .collect();
+
+        if tools_capability {
+            request = request.tools(tools.clone());
+        }
+
+        if thinking_capability {
+            request = request.think(true);
+        }
+
+        let history = self.history.clone();
+
+        Ok(self
+            .ollama
+            .send_chat_messages_with_history(&mut *self.history.messages.lock().unwrap(), request)
+            .await?)
     }
 
     pub fn clear(&mut self) {
