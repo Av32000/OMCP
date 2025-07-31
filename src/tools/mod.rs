@@ -49,6 +49,18 @@ impl ToolManager {
         Err(format!("Tool '{}' not found.", name).into())
     }
 
+    pub fn toggle_tool_status(&mut self, name: &str) -> AppResult<()> {
+        for service in &mut self.services {
+            for tool in &mut service.tools {
+                if tool.tool_info.name == name {
+                    tool.enabled = !tool.enabled;
+                    return Ok(());
+                }
+            }
+        }
+        Err(format!("Tool '{}' not found.", name).into())
+    }
+
     pub fn get_enabled_tools(&self) -> Vec<MCPTool> {
         self.services
             .iter()

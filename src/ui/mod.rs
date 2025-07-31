@@ -3,7 +3,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use ollama_rs::generation::{chat::ChatMessage, completion::request::GenerationRequest};
+use ollama_rs::generation::{
+    chat::ChatMessage, completion::request::GenerationRequest, parameters::KeepAlive,
+};
 use tokio::io::{AsyncWriteExt, stdout};
 use tokio_stream::StreamExt;
 
@@ -116,10 +118,7 @@ impl AppUI {
         if input.starts_with('/') {
             let parts: Vec<&str> = input.split_whitespace().collect();
             let command = parts.iter().next().unwrap_or(&"");
-            let args = parts
-                .get(1..)
-                .map(|s| s.join(" "))
-                .unwrap_or("".to_string());
+            let args = parts.get(1..).unwrap_or_default();
 
             match command.to_lowercase().as_str() {
                 "/quit" => {
@@ -133,30 +132,37 @@ impl AppUI {
                 "/history" => {
                     dbg!(self.ollama_chat.get_history());
                 }
-                "/tools" => match args.as_str() {
+                "/tools" => match *args.get(0).unwrap_or(&&"") {
                     "show" => {
                         let tools = self.tool_manager.lock().await;
                         println!("{}", render_available_tools(&tools.get_tools()));
                     }
                     "toggle" => {
+                        let tool = *args.get(1).unwrap_or(&&"");
                         let mut tools = self.tool_manager.lock().await;
-                        let choices = tools
-                            .get_tools()
-                            .iter()
-                            .map(|tool| {
-                                (
-                                    MenuChoice {
-                                        name: tool.tool_info.name.to_string(),
-                                        shortcut: '#',
-                                    },
-                                    tool.enabled,
-                                )
-                            })
-                            .collect::<Vec<_>>();
-                        let selected = input::menu_toggle("Toggle Tools : ", choices).await;
+                        if tool.is_empty() {
+                            let choices = tools
+                                .get_tools()
+                                .iter()
+                                .map(|tool| {
+                                    (
+                                        MenuChoice {
+                                            name: tool.tool_info.name.to_string(),
+                                            shortcut: '#',
+                                        },
+                                        tool.enabled,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            let selected = input::menu_toggle("Toggle Tools : ", choices).await;
 
-                        for choice in selected.iter() {
-                            tools.set_tool_status(&choice.0.name, choice.1).unwrap();
+                            for choice in selected.iter() {
+                                tools.set_tool_status(&choice.0.name, choice.1).unwrap();
+                            }
+                        } else {
+                            tools.toggle_tool_status(tool).unwrap_or_else(|err| {
+                                eprintln!("{}", err);
+                            });
                         }
                         println!("{}", render_available_tools(&tools.get_tools()));
                     }
@@ -164,7 +170,7 @@ impl AppUI {
                         println!("Usage: /tools [show|toggle]");
                     }
                 },
-                "/settings" => match args.as_str() {
+                "/settings" => match *args.get(0).unwrap_or(&&"") {
                     "show" => {
                         let settings = self.settings_manager.lock().unwrap();
                         println!("{}", settings.render(true));
@@ -185,16 +191,23 @@ impl AppUI {
                         println!("Usage: /settings [show|edit]");
                     }
                 },
-                "/model" => match args.as_str() {
+                "/model" => match *args.get(0).unwrap_or(&&"") {
                     "info" => {
+                        let model: String = (*args.get(1).unwrap_or(
+                            &self
+                                .settings_manager
+                                .lock()
+                                .unwrap()
+                                .model_name
+                                .clone()
+                                .as_str(),
+                        ))
+                        .to_string();
+
                         println!(
                             "{}",
                             RoundedBox::new(
-                                &render_model_info(
-                                    self.settings_manager.lock().unwrap().model_name.clone(),
-                                    &self.ollama_chat.ollama
-                                )
-                                .await,
+                                &render_model_info(model, &self.ollama_chat.ollama).await,
                                 Some("Model Info"),
                                 Some(AnsiColor::BrightBlue),
                                 false
@@ -203,17 +216,20 @@ impl AppUI {
                         );
                     }
                     "select" => {
-                        let model =
-                            select_model(&self.ollama_chat.ollama)
-                                .await
-                                .unwrap_or_else(|err| {
+                        let mut model: String = (*args.get(1).unwrap_or(&"")).to_string();
+
+                        if model.is_empty() {
+                            model = select_model(&self.ollama_chat.ollama).await.unwrap_or_else(
+                                |err| {
                                     eprintln!("Error selecting model: {}", err);
                                     return String::new();
-                                });
+                                },
+                            );
+                        }
 
                         if !model.is_empty() {
                             let mut settings = self.settings_manager.lock().unwrap();
-                            settings.model_name = model;
+                            settings.model_name = model.to_string();
                             if settings.auto_save_config {
                                 settings
                                     .save_to_file(&settings.config_file_path)
@@ -239,27 +255,68 @@ impl AppUI {
                         }
                     }
                     "load" => {
+                        let model: String = (*args.get(1).unwrap_or(
+                            &self
+                                .settings_manager
+                                .lock()
+                                .unwrap()
+                                .model_name
+                                .clone()
+                                .as_str(),
+                        ))
+                        .to_string();
+
                         match self
                             .ollama_chat
                             .ollama
-                            .generate(GenerationRequest::new(
-                                self.settings_manager.lock().unwrap().model_name.clone(),
-                                "",
-                            ))
+                            .generate(GenerationRequest::new(model, ""))
                             .await
                         {
                             Ok(_) => println!("Model loaded successfully!"),
                             Err(err) => eprintln!("Error loading model: {}", err),
                         };
                     }
-                    "pull" => {
+                    "unload" => {
+                        let model: String = (*args.get(1).unwrap_or(
+                            &self
+                                .settings_manager
+                                .lock()
+                                .unwrap()
+                                .model_name
+                                .clone()
+                                .as_str(),
+                        ))
+                        .to_string();
+
                         match self
                             .ollama_chat
                             .ollama
-                            .pull_model_stream(
-                                self.settings_manager.lock().unwrap().model_name.clone(),
-                                false,
+                            .generate(
+                                GenerationRequest::new(model, "")
+                                    .keep_alive(KeepAlive::UnloadOnCompletion),
                             )
+                            .await
+                        {
+                            Ok(_) => println!("Model unloaded successfully!"),
+                            Err(err) => eprintln!("Error unloading model: {}", err),
+                        };
+                    }
+                    "pull" => {
+                        let model: String = (*args.get(1).unwrap_or(
+                            &self
+                                .settings_manager
+                                .lock()
+                                .unwrap()
+                                .model_name
+                                .clone()
+                                .as_str(),
+                        ))
+                        .to_string();
+
+                        match self
+                            .ollama_chat
+                            .ollama
+                            .pull_model_stream(model, false)
                             .await
                         {
                             Ok(mut stream) => {
@@ -288,7 +345,7 @@ impl AppUI {
                         }
                     }
                     _ => {
-                        println!("Usage: /model [info|select|load|pull]");
+                        println!("Usage: /model [info|select|load|unload|pull] <model>");
                     }
                 },
                 "/help" => {
@@ -302,8 +359,8 @@ impl AppUI {
                             "Show, Edit or Save current settings",
                         ),
                         (
-                            "/model [info|select|load|pull]",
-                            "Manage model used by Ollama",
+                            "/model [info|select|load|unload|pull] <model>",
+                            "Manage model used by Ollama. <model> is optional",
                         ),
                         ("/help", "Show this help message"),
                     ];
