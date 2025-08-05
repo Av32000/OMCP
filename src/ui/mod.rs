@@ -57,6 +57,11 @@ impl AppUI {
 
         let mut is_thinking = false;
 
+        if !self.ollama_chat.ollama.list_local_models().await.is_ok() {
+            eprintln!("Ollama is not running or not reachable. Please start Ollama and try again.");
+            exit(1);
+        }
+
         while self.running {
             let input = input::text_input("> ");
 
