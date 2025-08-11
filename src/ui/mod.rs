@@ -12,6 +12,7 @@ use tokio_stream::StreamExt;
 use crate::{
     chat::OllamaChat,
     model::{render_model_info, select_model},
+    read_history,
     settings::SettingsManager,
     tools::ToolManager,
     ui::{
@@ -19,6 +20,7 @@ use crate::{
         tools::render_available_tools,
         utils::{AnsiColor, colorize_text},
     },
+    write_history,
 };
 
 pub mod input;
@@ -54,6 +56,7 @@ impl AppUI {
 
     pub async fn run(&mut self) -> crate::AppResult<()> {
         let mut stdout = stdout();
+        let mut input_history = read_history();
 
         let mut is_thinking = false;
 
@@ -63,9 +66,10 @@ impl AppUI {
         }
 
         while self.running {
-            let input = input::text_input("> ");
+            let input = input::text_input("> ", None, &mut input_history);
 
             let input = input.trim_end();
+            write_history(input_history.clone());
             if self.parse_command(input).await {
                 continue;
             }

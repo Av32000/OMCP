@@ -9,16 +9,19 @@ use ollama_rs::generation::chat::ChatMessage;
 
 use crate::{chat::OllamaChat, settings::SettingsManager, tools::ToolManager};
 use std::{
+    fs::read_to_string,
     path::PathBuf,
     process::exit,
     sync::{Arc, Mutex},
 };
+use tokio::fs::write;
 
 pub type AppResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub enum ConfigFile {
     Settings,
     MCPServers,
+    History,
 }
 
 impl ConfigFile {
@@ -26,6 +29,7 @@ impl ConfigFile {
         match self {
             ConfigFile::Settings => "settings.json",
             ConfigFile::MCPServers => "mcp_servers.json",
+            ConfigFile::History => "history.txt",
         }
     }
 }
@@ -40,6 +44,27 @@ pub fn get_config_path(file: ConfigFile) -> PathBuf {
     }
     config_path.push(file.file_name());
     config_path
+}
+
+pub fn read_history() -> Vec<String> {
+    let history_path = get_config_path(ConfigFile::History);
+    if history_path.exists() {
+        read_to_string(&history_path)
+            .unwrap_or_default()
+            .lines()
+            .map(|line| line.to_string())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn write_history(history: Vec<String>) {
+    tokio::spawn(async move {
+        let history_path = get_config_path(ConfigFile::History);
+        let history_content = history.join("\n");
+        write(&history_path, history_content).await.ok();
+    });
 }
 
 #[tokio::main]

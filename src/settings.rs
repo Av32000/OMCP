@@ -100,14 +100,22 @@ impl SettingsManager {
         let current_value = json_value.get(&key).cloned().unwrap_or(Value::Null);
 
         match current_value {
-            Value::String(_) => {
-                let new_value = text_input(&format!("New value for {}: ", key));
+            Value::String(value) => {
+                let new_value = text_input(
+                    &format!("New value for {}: ", key),
+                    Some(value.to_string()),
+                    &mut Vec::new(),
+                );
                 if !new_value.is_empty() || OPTIONAL_VALUES.contains(&key.as_str()) {
                     self.update_setting(&key, Value::String(new_value));
                 }
             }
-            Value::Number(_) => {
-                let new_value = text_input(&format!("New value for {}: ", key));
+            Value::Number(value) => {
+                let new_value = text_input(
+                    &format!("New value for {}: ", key),
+                    Some(value.to_string()),
+                    &mut Vec::new(),
+                );
                 if !new_value.is_empty() {
                     let new_value: Number = new_value.parse().unwrap_or(Number::from(0));
                     self.update_setting(&key, Value::Number(new_value));

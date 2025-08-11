@@ -1,22 +1,183 @@
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{self, disable_raw_mode, enable_raw_mode},
+    terminal::{self, Clear, ClearType, disable_raw_mode, enable_raw_mode},
 };
+use std::io::{self, Write};
 use tokio::io::{AsyncWriteExt, stdout};
 
 use crate::ui::utils::{AnsiColor, colorize_text};
 
-pub fn text_input(prompt: &str) -> String {
-    use std::io::{self, Write};
+pub fn text_input(
+    prompt: &str,
+    current_input: Option<String>,
+    history: &mut Vec<String>,
+) -> String {
+    const HISTORY_LIMIT: usize = 100;
 
-    print!("{}", prompt);
-    io::stdout().flush().unwrap();
+    let mut stdout = io::stdout();
+    let mut input = current_input.unwrap_or_default();
+    let mut cursor_pos = input.len();
+    let mut history_index: Option<usize> = None;
+    let mut history_snapshot = String::new();
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
+    print!("{}{}", prompt, input);
+    stdout.flush().unwrap();
+    enable_raw_mode().unwrap();
+
+    let mut redraw = false;
+    loop {
+        if redraw {
+            execute!(
+                stdout,
+                Clear(ClearType::CurrentLine),
+                cursor::MoveToColumn(0)
+            )
+            .unwrap();
+            print!("{}{}", prompt, input);
+            let prompt_len = prompt.chars().count();
+            let cursor_col = prompt_len + input[..cursor_pos].chars().count();
+            execute!(stdout, cursor::MoveToColumn(cursor_col as u16)).unwrap();
+            stdout.flush().unwrap();
+            redraw = false;
+        }
+        if let Event::Key(key_event) = event::read().unwrap() {
+            match key_event.code {
+                KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    disable_raw_mode().unwrap();
+                    println!();
+                    return String::new();
+                }
+                KeyCode::Char('u') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    input.clear();
+                    cursor_pos = 0;
+                    redraw = true;
+                }
+                KeyCode::Char('h') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if cursor_pos > 0 {
+                        let char_len = input[..cursor_pos]
+                            .chars()
+                            .last()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        input.replace_range(cursor_pos - char_len..cursor_pos, "");
+                        cursor_pos -= char_len;
+                        redraw = true;
+                    }
+                }
+                KeyCode::Backspace => {
+                    if cursor_pos > 0 {
+                        let char_len = input[..cursor_pos]
+                            .chars()
+                            .last()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        input.replace_range(cursor_pos - char_len..cursor_pos, "");
+                        cursor_pos -= char_len;
+                        redraw = true;
+                    }
+                }
+                KeyCode::Delete => {
+                    if cursor_pos < input.len() {
+                        let char_len = input[cursor_pos..]
+                            .chars()
+                            .next()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        input.replace_range(cursor_pos..cursor_pos + char_len, "");
+                        redraw = true;
+                    }
+                }
+                KeyCode::Left => {
+                    if cursor_pos > 0 {
+                        let char_len = input[..cursor_pos]
+                            .chars()
+                            .last()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        cursor_pos -= char_len;
+                        redraw = true;
+                    }
+                }
+                KeyCode::Right => {
+                    if cursor_pos < input.len() {
+                        let char_len = input[cursor_pos..]
+                            .chars()
+                            .next()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
+                        cursor_pos += char_len;
+                        redraw = true;
+                    }
+                }
+                KeyCode::Home => {
+                    cursor_pos = 0;
+                    redraw = true;
+                }
+                KeyCode::End => {
+                    cursor_pos = input.len();
+                    redraw = true;
+                }
+                KeyCode::Up => {
+                    if history.len() > 0 {
+                        if let Some(idx) = history_index {
+                            if idx > 0 {
+                                history_index = Some(idx - 1);
+                            }
+                        } else {
+                            history_snapshot = input.clone();
+                            history_index = Some(history.len() - 1);
+                        }
+                        if let Some(idx) = history_index {
+                            if let Some(val) = history.get(idx) {
+                                input = val.clone();
+                                cursor_pos = input.len();
+                                redraw = true;
+                            }
+                        }
+                    }
+                }
+                KeyCode::Down => {
+                    if let Some(idx) = history_index {
+                        if idx + 1 < history.len() {
+                            history_index = Some(idx + 1);
+                            if let Some(val) = history.get(idx + 1) {
+                                input = val.clone();
+                                cursor_pos = input.len();
+                                redraw = true;
+                            }
+                        } else {
+                            input = history_snapshot.clone();
+                            cursor_pos = input.len();
+                            history_index = None;
+                            redraw = true;
+                        }
+                    }
+                }
+                KeyCode::Char(c) => {
+                    input.insert(cursor_pos, c);
+                    cursor_pos += c.len_utf8();
+                    redraw = true;
+                }
+                KeyCode::Enter => {
+                    let trimmed = input.trim();
+                    if !trimmed.is_empty() {
+                        if history.last().map(|s| s.as_str()) != Some(trimmed) {
+                            history.push(trimmed.to_string());
+                            if history.len() > HISTORY_LIMIT {
+                                history.remove(0);
+                            }
+                        }
+                    }
+                    disable_raw_mode().unwrap();
+                    println!();
+                    return trimmed.to_string();
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

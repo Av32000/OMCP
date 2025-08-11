@@ -31,7 +31,7 @@ pub async fn select_model(ollama: &Ollama) -> AppResult<String> {
     let selected_model = input::menu_selection("Select a model : ", choices.clone(), true).await;
 
     if selected_model as usize == choices.len() - 1 {
-        let model_name = input::text_input("Enter model name: ");
+        let model_name = input::text_input("Enter model name: ", None, &mut Vec::new());
         return Ok(model_name);
     }
 
