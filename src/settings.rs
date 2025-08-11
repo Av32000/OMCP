@@ -11,7 +11,7 @@ use crate::{
     ui::{
         AppUIRenderable, RoundedBox,
         input::{MenuChoice, menu_selection, text_input},
-        utils::{AnsiColor, colorize_text},
+        utils::{AnsiColor, colorize_text, get_terminal_width, truncate_with_ellipsis},
     },
 };
 
@@ -75,15 +75,26 @@ impl SettingsManager {
         let json_value: Value =
             serde_json::to_value(self.clone()).expect("Failed to serialize settings");
 
+        let terminal_width = get_terminal_width();
         let mut choices = vec![];
         if let Value::Object(map) = json_value.clone() {
             for (key, value) in map {
+                let formatted_key = format_settings_key(key.clone());
+                let formatted_value = format_settings_value(value);
+
+                let key_with_separator_len = formatted_key.len() + 2;
+                let padding = 10;
+                let available_value_width = if terminal_width > key_with_separator_len + padding {
+                    terminal_width - key_with_separator_len - padding
+                } else {
+                    20
+                };
+
+                let truncated_value =
+                    truncate_with_ellipsis(&formatted_value, available_value_width);
+
                 choices.push(MenuChoice {
-                    name: format!(
-                        "{}: {}",
-                        format_settings_key(key),
-                        format_settings_value(value)
-                    ),
+                    name: format!("{}: {}", formatted_key, truncated_value),
                     shortcut: '#',
                 });
             }

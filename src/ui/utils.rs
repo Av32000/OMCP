@@ -33,11 +33,7 @@ impl RoundedBox {
         let space = ' ';
 
         let text_lines: Vec<&str> = self.text.lines().collect();
-        let terminal_width = if let Some((Width(w), _)) = terminal_size() {
-            w as usize
-        } else {
-            80
-        };
+        let terminal_width = get_terminal_width();
 
         let max_line_length = cmp::min(
             text_lines
@@ -160,6 +156,34 @@ impl RoundedBox {
 
 pub fn colorize_text(text: &str, color: AnsiColor) -> String {
     format!("\x1b[{}m{}\x1b[0m", color.to_ansi_code(), text)
+}
+
+pub fn get_terminal_width() -> usize {
+    if let Some((Width(w), _)) = terminal_size() {
+        w as usize
+    } else {
+        80
+    }
+}
+
+pub fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
+    if text.chars().count() <= max_width {
+        text.to_string()
+    } else if max_width <= 3 {
+        "...".to_string()
+    } else {
+        let mut truncated = String::new();
+        let mut char_count = 0;
+        for c in text.chars() {
+            if char_count + 3 >= max_width {
+                break;
+            }
+            truncated.push(c);
+            char_count += 1;
+        }
+        truncated.push_str("...");
+        truncated
+    }
 }
 
 #[allow(dead_code)]
