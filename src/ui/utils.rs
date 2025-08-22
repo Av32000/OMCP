@@ -68,11 +68,11 @@ impl RoundedBox {
             let title_padding = (total_width.saturating_sub(title_len)) / 2;
             format!(
                 "{}{}{}",
-                horizontal.to_string().repeat(title_padding - 2),
+                horizontal.to_string().repeat(title_padding.saturating_sub(2)),
                 format!(" {} ", title),
                 horizontal
                     .to_string()
-                    .repeat(total_width.saturating_sub(title_len + title_padding) - 2)
+                    .repeat(total_width.saturating_sub(title_len + title_padding).saturating_sub(2))
             )
         } else {
             horizontal.to_string().repeat(inner_width + 2)
